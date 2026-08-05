@@ -460,6 +460,17 @@ namespace OpenRA
 
 		public static IPlatform CreatePlatform(string platformName)
 		{
+#if ANDROID
+			// Static registration — no Assembly.Load on Android (AOT-safe)
+			if (string.IsNullOrEmpty(platformName) ||
+			    string.Equals(platformName, "Default", StringComparison.OrdinalIgnoreCase) ||
+			    string.Equals(platformName, "Android", StringComparison.OrdinalIgnoreCase))
+			{
+				return new OpenRA.Platforms.Android.AndroidPlatform();
+			}
+#endif
+
+			// Existing desktop dynamic-load path (unchanged)
 			var rendererPath = Path.Combine(Platform.BinDir, "OpenRA.Platforms." + platformName + ".dll");
 
 			var loader = new AssemblyLoader(rendererPath);

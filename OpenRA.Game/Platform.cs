@@ -16,7 +16,7 @@ using System.Runtime.InteropServices;
 
 namespace OpenRA
 {
-	public enum PlatformType { Unknown, Windows, OSX, Linux }
+	public enum PlatformType { Unknown, Windows, OSX, Linux, Android }
 
 	public enum SupportDirType { System, ModernUser, LegacyUser, User }
 
@@ -25,6 +25,9 @@ namespace OpenRA
 		public static PlatformType CurrentPlatform => LazyCurrentPlatform.Value;
 		public static Architecture CurrentArchitecture => RuntimeInformation.ProcessArchitecture;
 		public static readonly Guid SessionGUID = Guid.NewGuid();
+		// Injected by Android launcher before Game.Initialize
+		public static string AndroidFilesDir { get; set; }
+		public static string AndroidCacheDir { get; set; }
 
 		static readonly Lazy<PlatformType> LazyCurrentPlatform = Exts.Lazy(GetCurrentPlatform);
 
@@ -39,6 +42,9 @@ namespace OpenRA
 
 		static PlatformType GetCurrentPlatform()
 		{
+			#if ANDROID
+			return PlatformType.Android;
+			#else
 			if (Environment.OSVersion.Platform == PlatformID.Win32NT)
 				return PlatformType.Windows;
 
@@ -60,6 +66,7 @@ namespace OpenRA
 			catch { }
 
 			return PlatformType.Unknown;
+			#endif
 		}
 
 		public static string RuntimeVersion => $".NET CLR {Environment.Version}";
@@ -183,6 +190,15 @@ namespace OpenRA
 					modernUserSupportPath = Path.Combine(xdgConfigHome, "openra") + Path.DirectorySeparatorChar;
 					systemSupportPath = "/var/games/openra/";
 
+					break;
+				}
+
+				case PlatformType.Android:
+				{
+					modernUserSupportPath = legacyUserSupportPath =
+					Path.Combine(AndroidFilesDir, "OpenRA") + Path.DirectorySeparatorChar;
+
+					systemSupportPath = modernUserSupportPath;
 					break;
 				}
 

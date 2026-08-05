@@ -19,6 +19,13 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework Condition="'$(OpenRAAndroid)' == 'true'">net10.0-android</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(OpenRAAndroid)' == 'true'">
+    <DefineConstants>$(DefineConstants);ANDROID</DefineConstants>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <PropertyGroup>
