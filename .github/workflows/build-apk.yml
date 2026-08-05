@@ -1,0 +1,232 @@
+# Build OpenRA Android APK (arm64-v8a only)
+#
+# Caches:
+#   - NuGet packages
+#   - .NET Android workload packs / manifests
+#   - Android SDK platforms & build-tools
+#   - Project obj/ intermediate outputs (incremental)
+#
+# Expects repo root to contain OpenRA.AndroidLauncher/ and OpenRA.Platforms.Android/
+# (or set PROJECT_ROOT for a nested layout).
+
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master, android-port, bleed]
+    paths:
+      - "OpenRA.AndroidLauncher/**"
+      - "OpenRA.Platforms.Android/**"
+      - "native/android/**"
+      - ".github/workflows/build-apk.yml"
+  pull_request:
+    branches: [main, master, android-port]
+    paths:
+      - "OpenRA.AndroidLauncher/**"
+      - "OpenRA.Platforms.Android/**"
+      - "native/android/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Build configuration"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Debug
+          - Release
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  RID: android-arm64
+  TFM: net10.0-android
+  PROJECT_ROOT: ${{ github.workspace }}
+  LAUNCHER_CSPROJ: OpenRA.AndroidLauncher/OpenRA.AndroidLauncher.csproj
+
+jobs:
+  build-apk:
+    name: Build APK (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "microsoft"
+          java-version: "17"
+          cache: "gradle"
+
+      # ── Caches (restore before workload install / restore) ──────────────
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.NUGET_PACKAGES }}
+            ~/.nuget/packages
+          key: nuget-${{ runner.os }}-net10-${{ hashFiles('**/*.csproj', '**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-net10-
+            nuget-${{ runner.os }}-
+
+      - name: Cache .NET Android workload
+        id: cache-workload
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.dotnet/sdk-manifests
+            ~/.dotnet/library-packs
+            ~/.dotnet/template-packs
+            ~/.dotnet/workloads
+            ~/.dotnet/packs
+          key: dotnet-workload-android-${{ runner.os }}-net10-${{ hashFiles('.github/workflows/build-apk.yml') }}
+          restore-keys: |
+            dotnet-workload-android-${{ runner.os }}-net10-
+            dotnet-workload-android-${{ runner.os }}-
+
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}
+            ~/.android/cache
+            ~/.android/build-cache
+          key: android-sdk-${{ runner.os }}-api35-${{ hashFiles('.github/workflows/build-apk.yml') }}
+          restore-keys: |
+            android-sdk-${{ runner.os }}-api35-
+            android-sdk-${{ runner.os }}-
+
+      - name: Cache MSBuild intermediates (obj)
+        uses: actions/cache@v4
+        with:
+          path: |
+            OpenRA.AndroidLauncher/obj
+            OpenRA.Platforms.Android/obj
+          key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.cs') }}
+          restore-keys: |
+            msbuild-obj-${{ runner.os }}-
+
+      # ── Tooling ─────────────────────────────────────────────────────────
+      - name: Install Android workload
+        run: |
+          if [ "${{ steps.cache-workload.outputs.cache-hit }}" = "true" ]; then
+            echo "Workload cache hit — ensuring android workload is registered"
+            # Still run install; it should be fast / no-op when packs are present
+            dotnet workload install android --skip-manifest-update || dotnet workload install android
+          else
+            echo "Workload cache miss — installing android workload"
+            dotnet workload install android
+          fi
+          dotnet workload list
+
+      - name: Ensure Android SDK components
+        run: |
+          # .NET Android workload usually provisions SDK pieces; install extras if sdkmanager exists
+          if [ -n "${ANDROID_HOME:-}" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+              "platform-tools" \
+              "platforms;android-35" \
+              "build-tools;35.0.0" || true
+          else
+            echo "ANDROID_HOME/sdkmanager not fully available yet — workload will provision as needed"
+          fi
+
+      # ── Build ───────────────────────────────────────────────────────────
+      - name: Restore
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          if [ ! -f "${LAUNCHER_CSPROJ}" ]; then
+            echo "Launcher csproj not found at ${LAUNCHER_CSPROJ}"
+            ls -la
+            exit 1
+          fi
+          dotnet restore "${LAUNCHER_CSPROJ}" --verbosity minimal
+
+      - name: Build
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
+          echo "Building configuration: $CONFIG"
+          dotnet build "${LAUNCHER_CSPROJ}" \
+            -c "$CONFIG" \
+            -f ${{ env.TFM }} \
+            -p:RuntimeIdentifier=${{ env.RID }} \
+            -p:AndroidSupportedAbis=arm64-v8a \
+            --no-restore \
+            --verbosity minimal
+
+      - name: Publish APK
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
+          OUT_DIR="${{ github.workspace }}/artifacts-apk"
+          mkdir -p "$OUT_DIR"
+
+          dotnet publish "${LAUNCHER_CSPROJ}" \
+            -c "$CONFIG" \
+            -f ${{ env.TFM }} \
+            -p:RuntimeIdentifier=${{ env.RID }} \
+            -p:AndroidSupportedAbis=arm64-v8a \
+            -p:AndroidPackageFormat=apk \
+            -p:PublishTrimmed=false \
+            -p:RunAOTCompilation=false \
+            -o "$OUT_DIR" \
+            --no-restore \
+            --verbosity minimal
+
+          echo "Publish output (APK/AAB):"
+          find "$OUT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
+
+      - name: Collect APK
+        id: collect
+        run: |
+          OUT_DIR="${{ github.workspace }}/artifacts-apk"
+          APK=$(find "$OUT_DIR" -name "*-Signed.apk" | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find "$OUT_DIR" -name "*.apk" | head -1)
+          fi
+          if [ -z "$APK" ]; then
+            echo "No APK found under $OUT_DIR"
+            find "$OUT_DIR" -type f || true
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          DEST="${{ github.workspace }}/OpenRA-android-arm64-${SHORT_SHA}.apk"
+          cp "$APK" "$DEST"
+          echo "apk_path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $DEST ($(du -h "$DEST" | cut -f1))"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRA-android-arm64-${{ github.sha }}
+          path: ${{ steps.collect.outputs.apk_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  test-gestures:
+    name: Gesture unit harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Note
+        run: |
+          echo "Gesture harness is not yet a formal test project."
+          echo "Enable when OpenRA.Platforms.Android references real OpenRA.Game types."
