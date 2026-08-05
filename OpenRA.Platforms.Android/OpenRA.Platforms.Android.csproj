@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <RootNamespace>OpenRA.Platforms.Android</RootNamespace>
+    <AssemblyName>OpenRA.Platforms.Android</AssemblyName>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- arm64-v8a only for prototype -->
+    <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- <ProjectReference Include="..\..\OpenRA.Game\OpenRA.Game.csproj" /> -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Native libraries — arm64-v8a only -->
+    <!--
+    <AndroidNativeLibrary Include="libs\arm64-v8a\libSDL2.so" Abi="arm64-v8a" />
+    <AndroidNativeLibrary Include="libs\arm64-v8a\libopenal.so" Abi="arm64-v8a" />
+    <AndroidNativeLibrary Include="libs\arm64-v8a\libfreetype.so" Abi="arm64-v8a" />
+    <AndroidNativeLibrary Include="libs\arm64-v8a\liblua5.1.so" Abi="arm64-v8a" />
+    -->
+  </ItemGroup>
+</Project>

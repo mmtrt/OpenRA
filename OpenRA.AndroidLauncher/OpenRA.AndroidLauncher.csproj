@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OpenRA.Android</RootNamespace>
+    <ApplicationId>net.openra.android</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.0-alpha</ApplicationDisplayVersion>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <!-- Prototype locked to arm64-v8a only -->
+    <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
+    <AndroidSupportedAbis>arm64-v8a</AndroidSupportedAbis>
+    <AndroidMinSdkVersion>26</AndroidMinSdkVersion>
+    <AndroidTargetSdkVersion>35</AndroidTargetSdkVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishTrimmed>false</PublishTrimmed>
+    <RunAOTCompilation>false</RunAOTCompilation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Wire after multi-target -->
+    <!-- <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" /> -->
+  </ItemGroup>
+</Project>
