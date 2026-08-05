@@ -94,7 +94,7 @@ jobs:
         run: |
           NDK_ZIP="android-ndk-${{ env.NDK_VERSION }}-linux.zip"
           echo "Downloading NDK ${{ env.NDK_VERSION }} ..."
-          wget -q --show-progress "https://dl.google.com/android/repository/$NDK_ZIP"
+          wget --progress=dot:giga "https://dl.google.com/android/repository/$NDK_ZIP"
           echo "Extracting NDK ..."
           unzip -q "$NDK_ZIP"
           rm "$NDK_ZIP"
@@ -118,7 +118,7 @@ jobs:
         id: cache-native
         uses: actions/cache@v4
         with:
-          path: native/android/arm64-v8a/*.so
+          path: native/android/arm64-v8a
           key: native-libs-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-sdl${{ env.SDL2_VERSION }}-openal${{ env.OPENAL_VERSION }}-ft${{ env.FREETYPE_VERSION }}-lua${{ env.LUA_VERSION }}-${{ hashFiles('.github/workflows/build-apk.yml') }}
 
       - name: Build native libraries from source
@@ -126,13 +126,17 @@ jobs:
         run: |
           set -e
           export NDK="${{ github.workspace }}/android-ndk-${{ env.NDK_VERSION }}"
+          export ANDROID_NDK_HOME="$NDK"
+          export ANDROID_NDK_ROOT="$NDK"
           export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
           export TARGET="aarch64-linux-android26"
           export CC="$TOOLCHAIN/bin/$TARGET-clang"
           export CXX="$TOOLCHAIN/bin/$TARGET-clang++"
           export AR="$TOOLCHAIN/bin/llvm-ar"
           export RANLIB="$TOOLCHAIN/bin/llvm-ranlib"
-          export STRIP="$TOOLCHAIN/bin/llvm-strip"
+
+          # Suppress CMake 3.31 deprecation noise from NDK and older projects
+          export CMAKE_WARN_DEPRECATED=OFF
 
           OUT_DIR="${{ github.workspace }}/native/android/arm64-v8a"
           mkdir -p "$OUT_DIR"
@@ -140,29 +144,31 @@ jobs:
           mkdir -p "$BUILD_DIR"
           cd "$BUILD_DIR"
 
-          # ── SDL2 ──────────────────────────────────────────────────────
+          # ── SDL2 (CMake) ──────────────────────────────────────────────
           if [ ! -f "$OUT_DIR/libSDL2.so" ]; then
             echo "=== Building SDL2 ${{ env.SDL2_VERSION }} ==="
             wget -q "https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-${{ env.SDL2_VERSION }}.tar.gz"
             tar xzf "SDL2-${{ env.SDL2_VERSION }}.tar.gz"
             mkdir -p sdl2-build && cd sdl2-build
-            "../SDL2-${{ env.SDL2_VERSION }}/configure" \
-              --host="$TARGET" \
-              --prefix="$PWD/install" \
-              --disable-static \
-              --enable-shared \
-              --disable-video-opengl \
-              --enable-video-opengles
-            make -j"$(nproc)"
-            make install
-            cp "install/lib/libSDL2.so" "$OUT_DIR/"
+            cmake "../SDL2-${{ env.SDL2_VERSION }}" \
+              -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI=arm64-v8a \
+              -DANDROID_PLATFORM=android-26 \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=ON \
+              -DSDL_TESTS=OFF \
+              -DSDL_SHARED=ON \
+              -DSDL_STATIC=OFF
+            cmake --build . --parallel "$(nproc)"
+            cp libSDL2*.so* "$OUT_DIR/" 2>/dev/null || find . -maxdepth 1 -name "libSDL2*.so*" -exec cp {} "$OUT_DIR/" \;
             cd "$BUILD_DIR"
           fi
 
-          # ── OpenAL-soft ───────────────────────────────────────────────
+          # ── OpenAL-soft ─────────────────────────────────────────────────
           if [ ! -f "$OUT_DIR/libopenal.so" ]; then
             echo "=== Building OpenAL-soft ${{ env.OPENAL_VERSION }} ==="
-            wget -q "https://github.com/kcat/openal-soft/archive/refs/tags/${{ env.OPENAL_VERSION }}.tar.gz"
+            curl -fsSL -o "${{ env.OPENAL_VERSION }}.tar.gz" \
+              "https://github.com/kcat/openal-soft/archive/refs/tags/${{ env.OPENAL_VERSION }}.tar.gz"
             tar xzf "${{ env.OPENAL_VERSION }}.tar.gz"
             mkdir -p openal-build && cd openal-build
             cmake "../openal-soft-${{ env.OPENAL_VERSION }}" \
@@ -173,7 +179,7 @@ jobs:
               -DLIBTYPE=SHARED \
               -DALSOFT_UTILS=OFF \
               -DALSOFT_EXAMPLES=OFF
-            make -j"$(nproc)"
+            cmake --build . --parallel "$(nproc)"
             cp "libopenal.so" "$OUT_DIR/"
             cd "$BUILD_DIR"
           fi
@@ -181,16 +187,24 @@ jobs:
           # ── FreeType ────────────────────────────────────────────────────
           if [ ! -f "$OUT_DIR/libfreetype.so" ]; then
             echo "=== Building FreeType ${{ env.FREETYPE_VERSION }} ==="
-            wget -q "https://github.com/freetype/freetype/archive/refs/tags/VER-${{ env.FREETYPE_VERSION }}.tar.gz"
-            tar xzf "VER-${{ env.FREETYPE_VERSION }}.tar.gz"
+            
+            # Official mirror — far more reliable than GitHub auto-generated archives
+            curl -fsSL -o "freetype-${{ env.FREETYPE_VERSION }}.tar.xz" \
+              "https://download.savannah.gnu.org/releases/freetype/freetype-${{ env.FREETYPE_VERSION }}.tar.xz"
+            
+            tar xf "freetype-${{ env.FREETYPE_VERSION }}.tar.xz"
             mkdir -p freetype-build && cd freetype-build
-            cmake "../freetype-VER-${{ env.FREETYPE_VERSION }}" \
+            
+            cmake "../freetype-${{ env.FREETYPE_VERSION }}" \
               -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
               -DANDROID_ABI=arm64-v8a \
               -DANDROID_PLATFORM=android-26 \
               -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_SHARED_LIBS=ON
-            make -j"$(nproc)"
+              -DBUILD_SHARED_LIBS=ON \
+              -DFT_DISABLE_HARFBUZZ=ON \
+              -DFT_DISABLE_BROTLI=ON
+              
+            cmake --build . --parallel "$(nproc)"
             cp "libfreetype.so" "$OUT_DIR/"
             cd "$BUILD_DIR"
           fi
@@ -201,14 +215,16 @@ jobs:
             wget -q "https://www.lua.org/ftp/lua-${{ env.LUA_VERSION }}.tar.gz"
             tar xzf "lua-${{ env.LUA_VERSION }}.tar.gz"
             cd "lua-${{ env.LUA_VERSION }}"
-            make linux \
+            # Build ONLY liblua.a; skip lua/luac interpreters that need readline/ncurses
+            make -C src liblua.a \
               CC="$CC" \
               AR="$AR rcu" \
               RANLIB="$RANLIB" \
-              MYCFLAGS="-fPIC -DLUA_USE_LINUX"
+              MYCFLAGS="-fPIC -O2 -D__ANDROID__" \
+              MYLDFLAGS=""
+            # Package the shared library from the object files
             "$CC" -shared -fPIC -o liblua5.1.so src/*.o -lm
             cp "liblua5.1.so" "$OUT_DIR/"
-            cd "$BUILD_DIR"
           fi
 
           echo "=== Native libraries built ==="
