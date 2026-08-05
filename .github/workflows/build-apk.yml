@@ -1,6 +1,11 @@
 # Build OpenRA Android APK (arm64-v8a only)
 #
+# Builds native libraries (SDL2, OpenAL-soft, FreeType, Lua 5.1) from source
+# using Android NDK r27c, then publishes the .NET Android APK.
+#
 # Caches:
+#   - Android NDK
+#   - Built native .so libraries
 #   - NuGet packages
 #   - .NET Android workload packs / manifests
 #   - Android SDK platforms & build-tools
@@ -15,13 +20,15 @@ on:
   push:
     branches: [main, master, android-port, bleed]
     paths:
+      - "OpenRA.Game/**"
       - "OpenRA.AndroidLauncher/**"
       - "OpenRA.Platforms.Android/**"
       - "native/android/**"
       - ".github/workflows/build-apk.yml"
   pull_request:
-    branches: [main, master, android-port]
+    branches: [main, master, android-port, bleed]
     paths:
+      - "OpenRA.Game/**"
       - "OpenRA.AndroidLauncher/**"
       - "OpenRA.Platforms.Android/**"
       - "native/android/**"
@@ -46,12 +53,18 @@ env:
   TFM: net10.0-android
   PROJECT_ROOT: ${{ github.workspace }}
   LAUNCHER_CSPROJ: OpenRA.AndroidLauncher/OpenRA.AndroidLauncher.csproj
+  # Native library versions
+  NDK_VERSION: r27c
+  SDL2_VERSION: 2.30.9
+  OPENAL_VERSION: 1.23.1
+  FREETYPE_VERSION: 2.13.2
+  LUA_VERSION: 5.1.5
 
 jobs:
   build-apk:
     name: Build APK (arm64-v8a)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -69,7 +82,140 @@ jobs:
           java-version: "17"
           cache: "gradle"
 
-      # ── Caches (restore before workload install / restore) ──────────────
+      # ── Native Libraries ────────────────────────────────────────────────
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/android-ndk-${{ env.NDK_VERSION }}
+          key: ndk-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('.github/workflows/build-apk.yml') }}
+
+      - name: Download Android NDK
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: |
+          NDK_ZIP="android-ndk-${{ env.NDK_VERSION }}-linux.zip"
+          echo "Downloading NDK ${{ env.NDK_VERSION }} ..."
+          wget -q --show-progress "https://dl.google.com/android/repository/$NDK_ZIP"
+          echo "Extracting NDK ..."
+          unzip -q "$NDK_ZIP"
+          rm "$NDK_ZIP"
+          ls -d android-ndk-${{ env.NDK_VERSION }}
+
+      - name: Check for prebuilt native libraries
+        id: check-native
+        run: |
+          NATIVE_DIR="native/android/arm64-v8a"
+          if [ -f "$NATIVE_DIR/libSDL2.so" ] && \
+             [ -f "$NATIVE_DIR/libopenal.so" ] && \
+             [ -f "$NATIVE_DIR/libfreetype.so" ] && \
+             [ -f "$NATIVE_DIR/liblua5.1.so" ]; then
+            echo "prebuilt=true" >> "$GITHUB_OUTPUT"
+            echo "Prebuilt native libraries found — skipping source build"
+          else
+            echo "prebuilt=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache built native libraries
+        id: cache-native
+        uses: actions/cache@v4
+        with:
+          path: native/android/arm64-v8a/*.so
+          key: native-libs-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-sdl${{ env.SDL2_VERSION }}-openal${{ env.OPENAL_VERSION }}-ft${{ env.FREETYPE_VERSION }}-lua${{ env.LUA_VERSION }}-${{ hashFiles('.github/workflows/build-apk.yml') }}
+
+      - name: Build native libraries from source
+        if: steps.cache-native.outputs.cache-hit != 'true' && steps.check-native.outputs.prebuilt != 'true'
+        run: |
+          set -e
+          export NDK="${{ github.workspace }}/android-ndk-${{ env.NDK_VERSION }}"
+          export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          export TARGET="aarch64-linux-android26"
+          export CC="$TOOLCHAIN/bin/$TARGET-clang"
+          export CXX="$TOOLCHAIN/bin/$TARGET-clang++"
+          export AR="$TOOLCHAIN/bin/llvm-ar"
+          export RANLIB="$TOOLCHAIN/bin/llvm-ranlib"
+          export STRIP="$TOOLCHAIN/bin/llvm-strip"
+
+          OUT_DIR="${{ github.workspace }}/native/android/arm64-v8a"
+          mkdir -p "$OUT_DIR"
+          BUILD_DIR="${{ github.workspace }}/native-build"
+          mkdir -p "$BUILD_DIR"
+          cd "$BUILD_DIR"
+
+          # ── SDL2 ──────────────────────────────────────────────────────
+          if [ ! -f "$OUT_DIR/libSDL2.so" ]; then
+            echo "=== Building SDL2 ${{ env.SDL2_VERSION }} ==="
+            wget -q "https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-${{ env.SDL2_VERSION }}.tar.gz"
+            tar xzf "SDL2-${{ env.SDL2_VERSION }}.tar.gz"
+            mkdir -p sdl2-build && cd sdl2-build
+            "../SDL2-${{ env.SDL2_VERSION }}/configure" \
+              --host="$TARGET" \
+              --prefix="$PWD/install" \
+              --disable-static \
+              --enable-shared \
+              --disable-video-opengl \
+              --enable-video-opengles
+            make -j"$(nproc)"
+            make install
+            cp "install/lib/libSDL2.so" "$OUT_DIR/"
+            cd "$BUILD_DIR"
+          fi
+
+          # ── OpenAL-soft ───────────────────────────────────────────────
+          if [ ! -f "$OUT_DIR/libopenal.so" ]; then
+            echo "=== Building OpenAL-soft ${{ env.OPENAL_VERSION }} ==="
+            wget -q "https://github.com/kcat/openal-soft/archive/refs/tags/${{ env.OPENAL_VERSION }}.tar.gz"
+            tar xzf "${{ env.OPENAL_VERSION }}.tar.gz"
+            mkdir -p openal-build && cd openal-build
+            cmake "../openal-soft-${{ env.OPENAL_VERSION }}" \
+              -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI=arm64-v8a \
+              -DANDROID_PLATFORM=android-26 \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DLIBTYPE=SHARED \
+              -DALSOFT_UTILS=OFF \
+              -DALSOFT_EXAMPLES=OFF
+            make -j"$(nproc)"
+            cp "libopenal.so" "$OUT_DIR/"
+            cd "$BUILD_DIR"
+          fi
+
+          # ── FreeType ────────────────────────────────────────────────────
+          if [ ! -f "$OUT_DIR/libfreetype.so" ]; then
+            echo "=== Building FreeType ${{ env.FREETYPE_VERSION }} ==="
+            wget -q "https://github.com/freetype/freetype/archive/refs/tags/VER-${{ env.FREETYPE_VERSION }}.tar.gz"
+            tar xzf "VER-${{ env.FREETYPE_VERSION }}.tar.gz"
+            mkdir -p freetype-build && cd freetype-build
+            cmake "../freetype-VER-${{ env.FREETYPE_VERSION }}" \
+              -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI=arm64-v8a \
+              -DANDROID_PLATFORM=android-26 \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=ON
+            make -j"$(nproc)"
+            cp "libfreetype.so" "$OUT_DIR/"
+            cd "$BUILD_DIR"
+          fi
+
+          # ── Lua 5.1 ─────────────────────────────────────────────────────
+          if [ ! -f "$OUT_DIR/liblua5.1.so" ]; then
+            echo "=== Building Lua ${{ env.LUA_VERSION }} ==="
+            wget -q "https://www.lua.org/ftp/lua-${{ env.LUA_VERSION }}.tar.gz"
+            tar xzf "lua-${{ env.LUA_VERSION }}.tar.gz"
+            cd "lua-${{ env.LUA_VERSION }}"
+            make linux \
+              CC="$CC" \
+              AR="$AR rcu" \
+              RANLIB="$RANLIB" \
+              MYCFLAGS="-fPIC -DLUA_USE_LINUX"
+            "$CC" -shared -fPIC -o liblua5.1.so src/*.o -lm
+            cp "liblua5.1.so" "$OUT_DIR/"
+            cd "$BUILD_DIR"
+          fi
+
+          echo "=== Native libraries built ==="
+          ls -la "$OUT_DIR/"
+
+      # ── .NET / Android Tooling ──────────────────────────────────────────
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -79,7 +225,6 @@ jobs:
           key: nuget-${{ runner.os }}-net10-${{ hashFiles('**/*.csproj', '**/packages.lock.json', '**/Directory.Packages.props') }}
           restore-keys: |
             nuget-${{ runner.os }}-net10-
-            nuget-${{ runner.os }}-
 
       - name: Cache .NET Android workload
         id: cache-workload
@@ -94,7 +239,6 @@ jobs:
           key: dotnet-workload-android-${{ runner.os }}-net10-${{ hashFiles('.github/workflows/build-apk.yml') }}
           restore-keys: |
             dotnet-workload-android-${{ runner.os }}-net10-
-            dotnet-workload-android-${{ runner.os }}-
 
       - name: Cache Android SDK
         uses: actions/cache@v4
@@ -106,14 +250,17 @@ jobs:
           key: android-sdk-${{ runner.os }}-api35-${{ hashFiles('.github/workflows/build-apk.yml') }}
           restore-keys: |
             android-sdk-${{ runner.os }}-api35-
-            android-sdk-${{ runner.os }}-
 
       - name: Cache MSBuild intermediates (obj)
         uses: actions/cache@v4
         with:
           path: |
+            OpenRA.Game/obj
             OpenRA.AndroidLauncher/obj
             OpenRA.Platforms.Android/obj
+            OpenRA.Mods.Common/obj
+            OpenRA.Mods.Cnc/obj
+            OpenRA.Mods.D2k/obj
           key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.cs') }}
           restore-keys: |
             msbuild-obj-${{ runner.os }}-
@@ -144,7 +291,7 @@ jobs:
             echo "ANDROID_HOME/sdkmanager not fully available yet — workload will provision as needed"
           fi
 
-      # ── Build ───────────────────────────────────────────────────────────
+      # ── Build Engine + APK ──────────────────────────────────────────────
       - name: Restore
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
@@ -155,11 +302,22 @@ jobs:
           fi
           dotnet restore "${LAUNCHER_CSPROJ}" --verbosity minimal
 
-      - name: Build
+      - name: Build Engine
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
-          echo "Building configuration: $CONFIG"
+          echo "Building engine: $CONFIG"
+          dotnet build OpenRA.Game/OpenRA.Game.csproj \
+            -c "$CONFIG" \
+            -p:OpenRAAndroid=true \
+            --no-restore \
+            --verbosity minimal
+
+      - name: Build Launcher
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
+          echo "Building launcher: $CONFIG"
           dotnet build "${LAUNCHER_CSPROJ}" \
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
@@ -187,7 +345,7 @@ jobs:
             --no-restore \
             --verbosity minimal
 
-          echo "Publish output (APK/AAB):"
+          echo "Publish output:"
           find "$OUT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
 
       - name: Collect APK
