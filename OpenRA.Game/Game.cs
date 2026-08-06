@@ -458,28 +458,45 @@ namespace OpenRA
 			InitializeMod(manifest, args);
 		}
 
+		public static Func<IPlatform> PlatformFactory { get; set; }
+
 		public static IPlatform CreatePlatform(string platformName)
 		{
-#if ANDROID
-			// Static registration — no Assembly.Load on Android (AOT-safe)
-			if (string.IsNullOrEmpty(platformName) ||
-			    string.Equals(platformName, "Default", StringComparison.OrdinalIgnoreCase) ||
-			    string.Equals(platformName, "Android", StringComparison.OrdinalIgnoreCase))
+			#if ANDROID
+			if (PlatformFactory != null)
+				return PlatformFactory();
+
+			const string typeName = "OpenRA.Platforms.Android.AndroidPlatform, OpenRA.Platforms.Android";
+			var type = Type.GetType(typeName, throwOnError: false);
+			if (type == null)
 			{
-				return new OpenRA.Platforms.Android.AndroidPlatform();
+				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					if (asm.GetName().Name == "OpenRA.Platforms.Android")
+					{
+						type = asm.GetType("OpenRA.Platforms.Android.AndroidPlatform");
+						break;
+					}
+				}
 			}
-#endif
 
-			// Existing desktop dynamic-load path (unchanged)
+			if (type == null)
+				throw new InvalidOperationException(
+					"Set Game.PlatformFactory or ensure OpenRA.Platforms.Android is loaded.");
+
+				return (IPlatform)Activator.CreateInstance(type);
+			#else
 			var rendererPath = Path.Combine(Platform.BinDir, "OpenRA.Platforms." + platformName + ".dll");
-
 			var loader = new AssemblyLoader(rendererPath);
-			var platformType = loader.LoadDefaultAssembly().GetTypes().SingleOrDefault(t => typeof(IPlatform).IsAssignableFrom(t));
+			var platformType = loader.LoadDefaultAssembly().GetTypes()
+			.SingleOrDefault(t => typeof(IPlatform).IsAssignableFrom(t));
 
 			if (platformType == null)
-				throw new InvalidOperationException("Platform dll must include exactly one IPlatform implementation.");
+				throw new InvalidOperationException(
+					"Platform dll must include exactly one IPlatform implementation.");
 
-			return (IPlatform)platformType.GetConstructor(Type.EmptyTypes).Invoke(null);
+				return (IPlatform)platformType.GetConstructor(Type.EmptyTypes).Invoke(null);
+			#endif
 		}
 
 		public static void InitializeMod(Manifest manifest, Arguments args)
