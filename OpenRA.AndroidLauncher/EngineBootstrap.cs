@@ -1,10 +1,13 @@
-// Bootstrap — path injection, first-launch marker, future Game.InitializeAndRun.
+// Bootstrap — path injection, PlatformFactory, Game.InitializeAndRun.
 // arm64-v8a prototype.
 
 using System;
 using System.IO;
+using System.Threading;
 using Android.App;
 using Android.Util;
+using OpenRA;
+using OpenRA.Platforms.Android;
 
 namespace OpenRA.Android
 {
@@ -15,9 +18,11 @@ namespace OpenRA.Android
 		public static string CacheDir { get; private set; }
 
 		const string ContentReadyMarker = ".content_ready";
+		static Thread gameThread;
 
 		/// <summary>
-		/// Call once the GameSurfaceView reports IsSurfaceReady.
+		/// Call once GameSurfaceView reports IsSurfaceReady.
+		/// Sets Android support paths, registers PlatformFactory, starts the engine.
 		/// </summary>
 		public static void Start(GameSurfaceView surface, string mod = "ra")
 		{
@@ -39,29 +44,58 @@ namespace OpenRA.Android
 			Log.Info("OpenRA.Bootstrap", $"SupportDir={SupportDir}");
 			Log.Info("OpenRA.Bootstrap", $"CacheDir={CacheDir}");
 
-			// When Platform.cs patch is applied:
-			// OpenRA.Platform.AndroidFilesDir = SupportDir;
-			// OpenRA.Platform.AndroidCacheDir  = CacheDir;
+			// Inject Android paths before any Platform.SupportDir access
+			// Load arm64 .so packages before any P/Invoke
+			OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
+
+			Platform.AndroidFilesDir = SupportDir;
+			Platform.AndroidCacheDir = CacheDir;
+
+			// Register platform without OpenRA.Game → Platforms.Android project reference
+			Game.PlatformFactory = () => new AndroidPlatform();
 
 			if (!IsContentReady())
 			{
-				Log.Info("OpenRA.Bootstrap", "Content not ready — first-launch install path");
-				// TODO: extract minimal assets from APK or start download
-				// MarkContentReady() after successful install
+				Log.Info("OpenRA.Bootstrap", "Content not ready — first-launch path");
+				// Placeholder: mark ready so later boots skip until real content pipeline exists
+				// MarkContentReady();
 			}
 
-			// TODO after multi-target:
-			// var platform = new OpenRA.Platforms.Android.AndroidPlatform();
-			// var window = platform.CreateWindow(...);
-			// MainActivity.PlatformWindow = (AndroidPlatformWindow)window;
-			// OpenRA.Game.InitializeAndRun(new[] {
-			//   "Engine.EngineDir=" + SupportDir,
-			//   "Engine.Platform=Android",
-			//   "Game.Mod=" + mod
-			// });
-
 			IsRunning = true;
-			Log.Info("OpenRA.Bootstrap", $"Bootstrap stub complete (mod={mod}) — engine call pending multi-target");
+
+			// Run the engine off the UI thread so MotionEvents keep flowing.
+			// NOTE: Real GLES requires the GL context on the correct thread;
+			// this will need alignment once EGL is implemented on GameSurfaceView.
+			gameThread = new Thread(() =>
+			{
+				try
+				{
+					Log.Info("OpenRA.Bootstrap", $"InitializeAndRun mod={mod}");
+					// Bind EGL to the game thread before the renderer starts
+					if (!OpenRA.Platforms.Android.AndroidEgl.MakeCurrent())
+						Log.Warn("OpenRA.Bootstrap", "EGL MakeCurrent on game thread failed: " + OpenRA.Platforms.Android.AndroidEgl.LastError);
+					Game.InitializeAndRun(new[]
+					{
+						"Engine.Platform=Android",
+						"Game.Mod=" + mod,
+						"Engine.SupportDir=" + SupportDir
+					});
+				}
+				catch (Exception e)
+				{
+					Log.Error("OpenRA.Bootstrap", $"Engine failed: {e}");
+				}
+				finally
+				{
+					IsRunning = false;
+					Log.Info("OpenRA.Bootstrap", "Engine exited");
+				}
+			})
+			{
+				IsBackground = true,
+				Name = "OpenRA.Game"
+			};
+			gameThread.Start();
 		}
 
 		public static bool IsContentReady()
@@ -72,12 +106,13 @@ namespace OpenRA.Android
 		public static void MarkContentReady()
 		{
 			var path = Path.Combine(SupportDir, "Content", ContentReadyMarker);
-			Directory.CreateDirectory(Path.GetDirectoryName(path));
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 			File.WriteAllText(path, DateTime.UtcNow.ToString("o"));
 		}
 
 		public static void Stop()
 		{
+			try { Game.Exit(); } catch { /* engine may not be up */ }
 			IsRunning = false;
 			MainActivity.PlatformWindow = null;
 		}

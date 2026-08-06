@@ -27,6 +27,7 @@ namespace OpenRA.Android
 		protected override void OnCreate(Bundle savedInstanceState)
 		{
 			base.OnCreate(savedInstanceState);
+			OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
 
 			Window.AddFlags(WindowManagerFlags.Fullscreen);
 			if (Window.DecorView != null)
@@ -63,9 +64,10 @@ namespace OpenRA.Android
 			{
 				bootstrapAttempted = true;
 				EngineBootstrap.Start(surfaceView, "ra");
-				statusOverlay.Text = "OpenRA Android (arm64)\nBootstrap stub ran\nEngine pending multi-target";
+				statusOverlay.Text = "OpenRA Android (arm64)\nEngine starting…\nPlatformFactory registered";
 			}
 
+			PlatformWindow ??= OpenRA.Platforms.Android.AndroidPlatformWindow.Current;
 			var input = PlatformWindow?.Input;
 			if (input == null)
 			{

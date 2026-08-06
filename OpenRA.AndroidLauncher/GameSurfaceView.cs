@@ -1,35 +1,28 @@
-// SurfaceView that will host the OpenGL ES 3.0 context.
-// arm64-v8a only prototype.
+// SurfaceView host — creates EGL ES 3.0 via OpenRA.Platforms.Android.AndroidEgl.
 
 using System;
 using Android.Content;
 using Android.Util;
 using Android.Views;
-using Android.Runtime;
+using OpenRA.Platforms.Android;
+using AndroidFormat = Android.Graphics.Format;
 
 namespace OpenRA.Android
 {
 	public class GameSurfaceView : SurfaceView, ISurfaceHolderCallback
 	{
-		// EGL handles (filled in once native EGL bindings are available)
-		IntPtr eglDisplay = IntPtr.Zero;
-		IntPtr eglContext = IntPtr.Zero;
-		IntPtr eglSurface = IntPtr.Zero;
 		bool surfaceReady;
+		public bool IsSurfaceReady => surfaceReady && AndroidEgl.IsReady;
+		public int SurfaceWidth { get; private set; }
+		public int SurfaceHeight { get; private set; }
 
-		public bool IsSurfaceReady => surfaceReady;
+		public GameSurfaceView(Context context) : base(context) => InitHolder();
+		public GameSurfaceView(Context context, IAttributeSet attrs) : base(context, attrs) => InitHolder();
 
-		public GameSurfaceView(Context context) : base(context)
+		void InitHolder()
 		{
 			Holder.AddCallback(this);
-			Focusable = true;
-			FocusableInTouchMode = true;
-			KeepScreenOn = true;
-		}
-
-		public GameSurfaceView(Context context, IAttributeSet attrs) : base(context, attrs)
-		{
-			Holder.AddCallback(this);
+			Holder.SetFormat(AndroidFormat.Rgba8888);
 			Focusable = true;
 			FocusableInTouchMode = true;
 			KeepScreenOn = true;
@@ -38,44 +31,42 @@ namespace OpenRA.Android
 		public void SurfaceCreated(ISurfaceHolder holder)
 		{
 			Log.Info("OpenRA.Surface", "SurfaceCreated");
-			// TODO Phase 3 — real EGL init:
-			// 1. eglGetDisplay(EGL_DEFAULT_DISPLAY)
-			// 2. eglInitialize
-			// 3. Choose config with EGL_OPENGL_ES3_BIT + 8-bit RGB + depth
-			// 4. eglCreateContext with client version 3
-			// 5. eglCreateWindowSurface from holder.Surface
-			// 6. eglMakeCurrent
-			// For now only mark the surface as present so higher layers can proceed.
-			surfaceReady = true;
-			Log.Info("OpenRA.Surface", "Surface marked ready (EGL stub)");
+			var w = Width > 0 ? Width : 1280;
+			var h = Height > 0 ? Height : 720;
+			SurfaceWidth = w;
+			SurfaceHeight = h;
+
+			if (AndroidEgl.Initialize(holder, w, h))
+			{
+				surfaceReady = true;
+				Log.Info("OpenRA.Surface", $"EGL ready {w}x{h}");
+			}
+			else
+			{
+				surfaceReady = false;
+				Log.Error("OpenRA.Surface", "EGL init failed: " + AndroidEgl.LastError);
+			}
 		}
 
-		public void SurfaceChanged(ISurfaceHolder holder, Android.Graphics.Format format, int width, int height)
+		public void SurfaceChanged(ISurfaceHolder holder, AndroidFormat format, int width, int height)
 		{
 			Log.Info("OpenRA.Surface", $"SurfaceChanged {width}x{height}");
-			// TODO: notify AndroidPlatformWindow / Renderer of new size
-			// and re-create EGL surface if required by the driver.
+			SurfaceWidth = width;
+			SurfaceHeight = height;
+			if (!AndroidEgl.Resize(holder, width, height))
+				Log.Error("OpenRA.Surface", "EGL resize failed: " + AndroidEgl.LastError);
+			else
+				surfaceReady = AndroidEgl.IsReady;
 		}
 
 		public void SurfaceDestroyed(ISurfaceHolder holder)
 		{
 			Log.Info("OpenRA.Surface", "SurfaceDestroyed");
 			surfaceReady = false;
-			// TODO: eglMakeCurrent(NO_SURFACE), eglDestroySurface, eglDestroyContext
-			eglSurface = IntPtr.Zero;
-			eglContext = IntPtr.Zero;
-			eglDisplay = IntPtr.Zero;
+			AndroidEgl.Destroy();
 		}
 
-		/// <summary>
-		/// Called each frame once the engine is running.
-		/// Will perform eglSwapBuffers when EGL is live.
-		/// </summary>
-		public void Present()
-		{
-			if (!surfaceReady || eglDisplay == IntPtr.Zero)
-				return;
-			// TODO: eglSwapBuffers(eglDisplay, eglSurface);
-		}
+		public bool MakeCurrent() => AndroidEgl.MakeCurrent();
+		public void Present() => AndroidEgl.SwapBuffers();
 	}
 }

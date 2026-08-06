@@ -3,16 +3,7 @@
 # Builds native libraries (SDL2, OpenAL-soft, FreeType, Lua 5.1) from source
 # using Android NDK r27c, then publishes the .NET Android APK.
 #
-# Caches:
-#   - Android NDK
-#   - Built native .so libraries
-#   - NuGet packages
-#   - .NET Android workload packs / manifests
-#   - Android SDK platforms & build-tools
-#   - Project obj/ intermediate outputs (incremental)
-#
-# Expects repo root to contain OpenRA.AndroidLauncher/ and OpenRA.Platforms.Android/
-# (or set PROJECT_ROOT for a nested layout).
+# Caches: NDK, native .so, NuGet, workload, Android SDK, MSBuild obj
 
 name: Build Android APK
 
@@ -53,7 +44,6 @@ env:
   TFM: net10.0-android
   PROJECT_ROOT: ${{ github.workspace }}
   LAUNCHER_CSPROJ: OpenRA.AndroidLauncher/OpenRA.AndroidLauncher.csproj
-  # Native library versions
   NDK_VERSION: r27c
   SDL2_VERSION: 2.30.9
   OPENAL_VERSION: 1.23.1
@@ -81,7 +71,6 @@ jobs:
           distribution: "microsoft"
           java-version: "17"
 
-      # ── Native Libraries ────────────────────────────────────────────────
       - name: Cache Android NDK
         id: cache-ndk
         uses: actions/cache@v4
@@ -134,8 +123,6 @@ jobs:
           export CXX="$TOOLCHAIN/bin/$TARGET-clang++"
           export AR="$TOOLCHAIN/bin/llvm-ar"
           export RANLIB="$TOOLCHAIN/bin/llvm-ranlib"
-
-          # Suppress CMake 3.31 deprecation noise from NDK and older projects
           export CMAKE_WARN_DEPRECATED=OFF
 
           OUT_DIR="${{ github.workspace }}/native/android/arm64-v8a"
@@ -144,7 +131,6 @@ jobs:
           mkdir -p "$BUILD_DIR"
           cd "$BUILD_DIR"
 
-          # ── SDL2 (CMake) ──────────────────────────────────────────────
           if [ ! -f "$OUT_DIR/libSDL2.so" ]; then
             echo "=== Building SDL2 ${{ env.SDL2_VERSION }} ==="
             wget -q "https://github.com/libsdl-org/SDL/releases/download/release-${{ env.SDL2_VERSION }}/SDL2-${{ env.SDL2_VERSION }}.tar.gz"
@@ -164,7 +150,6 @@ jobs:
             cd "$BUILD_DIR"
           fi
 
-          # ── OpenAL-soft ─────────────────────────────────────────────────
           if [ ! -f "$OUT_DIR/libopenal.so" ]; then
             echo "=== Building OpenAL-soft ${{ env.OPENAL_VERSION }} ==="
             curl -fsSL -o "${{ env.OPENAL_VERSION }}.tar.gz" \
@@ -184,17 +169,12 @@ jobs:
             cd "$BUILD_DIR"
           fi
 
-          # ── FreeType ────────────────────────────────────────────────────
           if [ ! -f "$OUT_DIR/libfreetype.so" ]; then
             echo "=== Building FreeType ${{ env.FREETYPE_VERSION }} ==="
-            
-            # Official mirror — far more reliable than GitHub auto-generated archives
             curl -fsSL -o "freetype-${{ env.FREETYPE_VERSION }}.tar.xz" \
               "https://download.savannah.gnu.org/releases/freetype/freetype-${{ env.FREETYPE_VERSION }}.tar.xz"
-            
             tar xf "freetype-${{ env.FREETYPE_VERSION }}.tar.xz"
             mkdir -p freetype-build && cd freetype-build
-            
             cmake "../freetype-${{ env.FREETYPE_VERSION }}" \
               -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
               -DANDROID_ABI=arm64-v8a \
@@ -203,34 +183,33 @@ jobs:
               -DBUILD_SHARED_LIBS=ON \
               -DFT_DISABLE_HARFBUZZ=ON \
               -DFT_DISABLE_BROTLI=ON
-              
             cmake --build . --parallel "$(nproc)"
             cp "libfreetype.so" "$OUT_DIR/"
             cd "$BUILD_DIR"
           fi
 
-          # ── Lua 5.1 ─────────────────────────────────────────────────────
           if [ ! -f "$OUT_DIR/liblua5.1.so" ]; then
             echo "=== Building Lua ${{ env.LUA_VERSION }} ==="
             wget -q "https://www.lua.org/ftp/lua-${{ env.LUA_VERSION }}.tar.gz"
             tar xzf "lua-${{ env.LUA_VERSION }}.tar.gz"
             cd "lua-${{ env.LUA_VERSION }}"
-            # Build ONLY liblua.a; skip lua/luac interpreters that need readline/ncurses
             make -C src liblua.a \
               CC="$CC" \
               AR="$AR rcu" \
               RANLIB="$RANLIB" \
               MYCFLAGS="-fPIC -O2 -D__ANDROID__" \
               MYLDFLAGS=""
-            # Package the shared library from the object files
             "$CC" -shared -fPIC -o liblua5.1.so src/*.o -lm
             cp "liblua5.1.so" "$OUT_DIR/"
           fi
 
+          # Eluant DllImport("lua51") alias
+          if [ -f "$OUT_DIR/liblua5.1.so" ] && [ ! -f "$OUT_DIR/liblua51.so" ]; then
+            cp "$OUT_DIR/liblua5.1.so" "$OUT_DIR/liblua51.so"
+          fi
           echo "=== Native libraries built ==="
           ls -la "$OUT_DIR/"
 
-      # ── .NET / Android Tooling ──────────────────────────────────────────
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -276,26 +255,21 @@ jobs:
             OpenRA.Mods.Common/obj
             OpenRA.Mods.Cnc/obj
             OpenRA.Mods.D2k/obj
-          key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.cs') }}
+          key: msbuild-obj-${{ runner.os }}-android-${{ hashFiles('**/*.csproj', '**/*.cs', 'Directory.Build.props') }}
           restore-keys: |
-            msbuild-obj-${{ runner.os }}-
+            msbuild-obj-${{ runner.os }}-android-
 
-      # ── Tooling ─────────────────────────────────────────────────────────
       - name: Install Android workload
         run: |
           if [ "${{ steps.cache-workload.outputs.cache-hit }}" = "true" ]; then
-            echo "Workload cache hit — ensuring android workload is registered"
-            # Still run install; it should be fast / no-op when packs are present
             dotnet workload install android --skip-manifest-update || dotnet workload install android
           else
-            echo "Workload cache miss — installing android workload"
             dotnet workload install android
           fi
           dotnet workload list
 
       - name: Ensure Android SDK components
         run: |
-          # .NET Android workload usually provisions SDK pieces; install extras if sdkmanager exists
           if [ -n "${ANDROID_HOME:-}" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
             "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
@@ -306,7 +280,6 @@ jobs:
             echo "ANDROID_HOME/sdkmanager not fully available yet — workload will provision as needed"
           fi
 
-      # ── Build Engine + APK ──────────────────────────────────────────────
       - name: Restore
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
@@ -315,29 +288,64 @@ jobs:
             ls -la
             exit 1
           fi
+
+          # Drop any cached desktop-only assets so restore can write net10.0-android
+          if [ -d OpenRA.Game/obj ]; then
+            echo "Clearing OpenRA.Game/obj to avoid stale TFM assets ..."
+            rm -rf OpenRA.Game/obj
+          fi
+
+          if [ -f OpenRA.Game/OpenRA.Game.csproj ]; then
+            echo "Restoring OpenRA.Game for net10.0-android (OpenRAAndroid=true) ..."
+            dotnet restore OpenRA.Game/OpenRA.Game.csproj \
+              /p:OpenRAAndroid=true \
+              --force \
+              --verbosity minimal
+
+            # Sanity-check that assets include the Android TFM
+            ASSETS="OpenRA.Game/obj/project.assets.json"
+            if [ -f "$ASSETS" ]; then
+              if grep -q "net10.0-android" "$ASSETS"; then
+                echo "OK: project.assets.json contains net10.0-android"
+              else
+                echo "ERROR: project.assets.json missing net10.0-android target"
+                echo "TargetFramework resolution may be wrong. Dumping relevant lines:"
+                grep -E "target|net10" "$ASSETS" | head -40 || true
+                exit 1
+              fi
+            else
+              echo "ERROR: $ASSETS was not created"
+              exit 1
+            fi
+          else
+            echo "WARNING: OpenRA.Game/OpenRA.Game.csproj not found — skip engine restore"
+          fi
+
+          echo "Restoring launcher ..."
           dotnet restore "${LAUNCHER_CSPROJ}" --verbosity minimal
 
       - name: Build Engine
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
-          echo "Building engine: $CONFIG"
+          if [ ! -f OpenRA.Game/OpenRA.Game.csproj ]; then
+            echo "OpenRA.Game.csproj missing — skip engine build"
+            exit 0
+          fi
+          # Do not use --no-restore here: property must match restore TFM every time
           dotnet build OpenRA.Game/OpenRA.Game.csproj \
             -c "$CONFIG" \
-            -p:OpenRAAndroid=true \
-            --no-restore \
+            /p:OpenRAAndroid=true \
             --verbosity minimal
 
       - name: Build Launcher
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
-          echo "Building launcher: $CONFIG"
           dotnet build "${LAUNCHER_CSPROJ}" \
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
             -p:RuntimeIdentifier=${{ env.RID }} \
-            -p:AndroidSupportedAbis=arm64-v8a \
             --no-restore \
             --verbosity minimal
 
@@ -347,20 +355,16 @@ jobs:
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
           OUT_DIR="${{ github.workspace }}/artifacts-apk"
           mkdir -p "$OUT_DIR"
-
           dotnet publish "${LAUNCHER_CSPROJ}" \
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
             -p:RuntimeIdentifier=${{ env.RID }} \
-            -p:AndroidSupportedAbis=arm64-v8a \
             -p:AndroidPackageFormat=apk \
             -p:PublishTrimmed=false \
             -p:RunAOTCompilation=false \
             -o "$OUT_DIR" \
             --no-restore \
             --verbosity minimal
-
-          echo "Publish output:"
           find "$OUT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
 
       - name: Collect APK

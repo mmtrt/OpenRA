@@ -7,9 +7,7 @@
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.1.0-alpha</ApplicationDisplayVersion>
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
-    <!-- Prototype locked to arm64-v8a only -->
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
-    <AndroidSupportedAbis>arm64-v8a</AndroidSupportedAbis>
     <AndroidMinSdkVersion>26</AndroidMinSdkVersion>
     <AndroidTargetSdkVersion>35</AndroidTargetSdkVersion>
     <Nullable>disable</Nullable>
@@ -20,7 +18,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Wire after multi-target -->
-    <!-- <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" /> -->
+    <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" />
+    <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" />
+  </ItemGroup>
+
+  <!-- Also pack natives on the app module so they land in the APK lib/arm64-v8a/ -->
+  <ItemGroup>
+    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libSDL2.so" />
+    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libopenal.so" />
+    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libfreetype.so" />
+    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\liblua5.1.so" />
   </ItemGroup>
 </Project>

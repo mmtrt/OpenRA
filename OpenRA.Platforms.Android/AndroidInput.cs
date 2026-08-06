@@ -12,10 +12,9 @@ using OpenRA.Primitives;
 namespace OpenRA.Platforms.Android
 {
 	/// <summary>
-	/// Translates Android multi-touch into OpenRA mouse-style events
-	/// using the Rusted Warfare interaction model:
-	///   single tap, double-tap (select all of type), long-press (right-click),
-	///   two-finger box select, one-finger pan, pinch zoom.
+	/// Translates Android multi-touch into OpenRA MouseInput events
+	/// (Rusted Warfare model: tap, double-tap, long-press, box select, pan, pinch).
+	/// Uses OpenRA.Game MouseInput / MouseButton / Modifiers types.
 	/// </summary>
 	public sealed class AndroidInput
 	{
@@ -80,17 +79,17 @@ namespace OpenRA.Platforms.Android
 				if (Math.Abs(dx) > PanSlop || Math.Abs(dy) > PanSlop)
 					panQueue.Enqueue(new int2(dx, dy));
 			}
-			else if (active.Count >= 2)
+			else if (active.Count == 2)
 			{
-				boxEnd = new int2(x, y);
+				boxEnd = new int2(active[1].X, active[1].Y);
 				var d = Dist(active[0], active[1]);
-				var delta = d - lastPinchDist;
-				if (Math.Abs(delta) > 5f)
+				if (lastPinchDist > 1f)
 				{
-					zoomQueue.Enqueue(delta * 0.004f);
-					lastPinchDist = d;
-					boxSelectActive = false;
+					var ratio = d / lastPinchDist;
+					if (Math.Abs(ratio - 1f) > 0.02f)
+						zoomQueue.Enqueue(ratio);
 				}
+				lastPinchDist = d;
 			}
 		}
 
@@ -99,56 +98,69 @@ namespace OpenRA.Platforms.Android
 			var i = IndexOf(id);
 			if (i < 0) return;
 
-			var touch = active[i];
+			var pt = active[i];
 			active.RemoveAt(i);
+
+			if (active.Count == 0 && primary.Id == id)
+			{
+				var held = timeMs - pt.DownMs;
+				var moved = Math.Abs(x - pt.X) + Math.Abs(y - pt.Y);
+				var loc = new int2(x, y);
+
+				if (held >= LongPressMs && moved <= TapSlop)
+				{
+					Enqueue(MouseInputEvent.Down, MouseButton.Right, loc, 1);
+					Enqueue(MouseInputEvent.Up, MouseButton.Right, loc, 1);
+				}
+				else if (moved <= TapSlop)
+				{
+					var multi = 1;
+					if (timeMs - lastTapMs <= DoubleTapMs &&
+					    Math.Abs(x - lastTapPos.X) <= DoubleTapSlop &&
+					    Math.Abs(y - lastTapPos.Y) <= DoubleTapSlop)
+						multi = 2;
+
+					var mods = multi > 1 ? Modifiers.Ctrl : Modifiers.None;
+					Enqueue(MouseInputEvent.Down, MouseButton.Left, loc, multi, mods);
+					Enqueue(MouseInputEvent.Up, MouseButton.Left, loc, multi, mods);
+					lastTapMs = timeMs;
+					lastTapPos = loc;
+				}
+			}
+			else if (boxSelectActive && active.Count < 2)
+			{
+				// Two-finger box select: emit drag selection
+				var a = boxStart;
+				var b = boxEnd;
+				Enqueue(MouseInputEvent.Down, MouseButton.Left, a, 1);
+				Enqueue(MouseInputEvent.Move, MouseButton.Left, b, 1);
+				Enqueue(MouseInputEvent.Up, MouseButton.Left, b, 1);
+				boxSelectActive = false;
+			}
 
 			if (active.Count == 0)
 			{
-				var held = timeMs - touch.DownMs;
-				var moved = Math.Abs(x - touch.X) + Math.Abs(y - touch.Y);
-
-				if (held >= LongPressMs && moved < TapSlop + 8)
-				{
-					Enqueue(MouseInputEvent.Down, MouseButton.Right, x, y, 0);
-					Enqueue(MouseInputEvent.Up, MouseButton.Right, x, y, 0);
-				}
-				else if (moved < TapSlop)
-				{
-					var isDouble = (timeMs - lastTapMs) < DoubleTapMs
-						&& Math.Abs(x - lastTapPos.X) < DoubleTapSlop
-						&& Math.Abs(y - lastTapPos.Y) < DoubleTapSlop;
-
-					var multi = isDouble ? 2 : 1;
-					var mods = isDouble ? Modifiers.Ctrl : Modifiers.None;
-
-					Enqueue(MouseInputEvent.Down, MouseButton.Left, x, y, multi, mods);
-					Enqueue(MouseInputEvent.Up, MouseButton.Left, x, y, multi, mods);
-
-					lastTapMs = timeMs;
-					lastTapPos = new int2(x, y);
-				}
-
+				primary = default;
 				boxSelectActive = false;
 			}
-			else if (boxSelectActive && active.Count == 1)
-			{
-				Enqueue(MouseInputEvent.Down, MouseButton.Left, boxStart.X, boxStart.Y, 0);
-				Enqueue(MouseInputEvent.Move, MouseButton.Left, boxEnd.X, boxEnd.Y, 0);
-				Enqueue(MouseInputEvent.Up, MouseButton.Left, boxEnd.X, boxEnd.Y, 0);
-				boxSelectActive = false;
-			}
+			else if (active.Count == 1)
+				primary = active[0];
 		}
 
 		public void OnTouchCancel(int id)
 		{
 			var i = IndexOf(id);
 			if (i >= 0) active.RemoveAt(i);
-			if (active.Count == 0) boxSelectActive = false;
+			if (active.Count == 0)
+			{
+				primary = default;
+				boxSelectActive = false;
+			}
 		}
 
-		void Enqueue(MouseInputEvent ev, MouseButton btn, int x, int y, int multiTap, Modifiers mods = Modifiers.None)
+		void Enqueue(MouseInputEvent ev, MouseButton button, int2 loc, int multi, Modifiers mods = Modifiers.None)
 		{
-			mouseQueue.Enqueue(new MouseInput(ev, btn, new int2(x, y), int2.Zero, mods, multiTap));
+			mouseQueue.Enqueue(new MouseInput(ev, button, loc, int2.Zero, mods, multi));
 		}
 
 		int IndexOf(int id)
@@ -169,29 +181,10 @@ namespace OpenRA.Platforms.Android
 		{
 			public readonly int Id, X, Y;
 			public readonly long DownMs;
-			public TouchPoint(int id, int x, int y, long downMs) { Id = id; X = x; Y = y; DownMs = downMs; }
-		}
-	}
-
-	// Local mirrors of upstream types so this file compiles standalone.
-	// Replaced by OpenRA.Game types once ProjectReferences are live.
-	public enum MouseInputEvent { Down, Move, Up, Scroll }
-	[Flags] public enum MouseButton { None = 0, Left = 1, Right = 2, Middle = 4 }
-	[Flags] public enum Modifiers { None = 0, Shift = 1, Alt = 2, Ctrl = 4, Meta = 8 }
-
-	public readonly struct MouseInput
-	{
-		public readonly MouseInputEvent Event;
-		public readonly MouseButton Button;
-		public readonly int2 Location;
-		public readonly int2 Delta;
-		public readonly Modifiers Modifiers;
-		public readonly int MultiTapCount;
-
-		public MouseInput(MouseInputEvent ev, MouseButton button, int2 location, int2 delta, Modifiers modifiers, int multiTapCount)
-		{
-			Event = ev; Button = button; Location = location; Delta = delta;
-			Modifiers = modifiers; MultiTapCount = multiTapCount;
+			public TouchPoint(int id, int x, int y, long downMs)
+			{
+				Id = id; X = x; Y = y; DownMs = downMs;
+			}
 		}
 	}
 }
