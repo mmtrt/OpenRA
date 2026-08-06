@@ -8,7 +8,6 @@
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
-    <!-- Propagate into ProjectReference builds of OpenRA.Game -->
     <OpenRAAndroid>true</OpenRAAndroid>
   </PropertyGroup>
 
@@ -16,19 +15,5 @@
     <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" AdditionalProperties="OpenRAAndroid=true" />
   </ItemGroup>
 
-  <ItemGroup>
-    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libSDL2.so" />
-    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libopenal.so" />
-    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libfreetype.so" />
-    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\liblua5.1.so" />
-  </ItemGroup>
-
-  <Target Name="AliasLua51" BeforeTargets="ResolveAssemblies" Condition="Exists('..\native\android\arm64-v8a\liblua5.1.so')">
-    <Copy SourceFiles="..\native\android\arm64-v8a\liblua5.1.so"
-          DestinationFiles="..\native\android\arm64-v8a\liblua51.so"
-          SkipUnchangedFiles="true" />
-    <ItemGroup>
-      <AndroidNativeLibrary Include="..\native\android\arm64-v8a\liblua51.so" />
-    </ItemGroup>
-  </Target>
+  <!-- Native .so files are packaged only by OpenRA.AndroidLauncher to avoid XA4301 duplicates -->
 </Project>
