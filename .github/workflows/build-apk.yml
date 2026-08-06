@@ -49,6 +49,7 @@ env:
   OPENAL_VERSION: 1.23.1
   FREETYPE_VERSION: 2.13.2
   LUA_VERSION: 5.1.5
+  OpenRAAndroid: true
 
 jobs:
   build-apk:
@@ -305,6 +306,7 @@ jobs:
               /p:OpenRAAndroid=true \
               --force \
               --verbosity minimal
+            # Assets must list net10.0-android only when OpenRAAndroid=true (not net10.0)
 
             # Sanity-check that assets include the Android TFM
             ASSETS="OpenRA.Game/obj/project.assets.json"
@@ -326,7 +328,7 @@ jobs:
           fi
 
           echo "Restoring launcher ..."
-          dotnet restore "${LAUNCHER_CSPROJ}" --verbosity minimal
+          dotnet restore "${LAUNCHER_CSPROJ}" /p:OpenRAAndroid=true --verbosity minimal
 
       - name: Build Engine
         working-directory: ${{ env.PROJECT_ROOT }}
@@ -346,11 +348,12 @@ jobs:
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
+          echo "Building launcher: $CONFIG"
           dotnet build "${LAUNCHER_CSPROJ}" \
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
+            /p:OpenRAAndroid=true \
             -p:RuntimeIdentifier=${{ env.RID }} \
-            --no-restore \
             --verbosity minimal
 
       - name: Publish APK
@@ -362,12 +365,12 @@ jobs:
           dotnet publish "${LAUNCHER_CSPROJ}" \
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
+            /p:OpenRAAndroid=true \
             -p:RuntimeIdentifier=${{ env.RID }} \
             -p:AndroidPackageFormat=apk \
             -p:PublishTrimmed=false \
             -p:RunAOTCompilation=false \
             -o "$OUT_DIR" \
-            --no-restore \
             --verbosity minimal
           find "$OUT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
 

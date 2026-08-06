@@ -1,21 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Minimal manifest for the arm64-only prototype.
-     .NET for Android will merge this with generated entries. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
-
-  <!-- OpenGL ES 3.0 required -->
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
   <uses-feature android:glEsVersion="0x00030000" android:required="true" />
-
-  <!-- Touchscreen required (no mouse-only devices) -->
   <uses-feature android:name="android.hardware.touchscreen" android:required="true" />
-
-  <!-- Optional: keep screen on during play is handled in code (KeepScreenOn) -->
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-  <!-- For future content download / maps -->
-  <!-- <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" /> -->
-
   <application
       android:allowBackup="true"
       android:icon="@mipmap/appicon"
@@ -24,6 +13,5 @@
       android:extractNativeLibs="true"
       android:isGame="true"
       android:hardwareAccelerated="true">
-    <!-- MainActivity is attributed in C#; this is a backup declaration -->
   </application>
 </manifest>

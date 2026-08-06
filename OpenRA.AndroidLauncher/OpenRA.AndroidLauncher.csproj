@@ -9,20 +9,20 @@
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
     <AndroidMinSdkVersion>26</AndroidMinSdkVersion>
-    <AndroidTargetSdkVersion>35</AndroidTargetSdkVersion>
+    <AndroidTargetSdkVersion>36</AndroidTargetSdkVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PublishTrimmed>false</PublishTrimmed>
     <RunAOTCompilation>false</RunAOTCompilation>
+    <OpenRAAndroid>true</OpenRAAndroid>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" />
-    <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" />
+    <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" AdditionalProperties="OpenRAAndroid=true" />
+    <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" AdditionalProperties="OpenRAAndroid=true" />
   </ItemGroup>
 
-  <!-- Also pack natives on the app module so they land in the APK lib/arm64-v8a/ -->
   <ItemGroup>
     <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libSDL2.so" />
     <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libopenal.so" />
