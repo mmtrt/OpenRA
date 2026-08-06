@@ -434,4 +434,4 @@ jobs:
           name: OpenRA-android-arm64-${{ github.sha }}
           path: ${{ steps.collect.outputs.apk_path }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
