@@ -6,7 +6,6 @@ using System.Threading;
 using Android.App;
 using OpenRA;
 using OpenRA.Platforms.Android;
-using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Android
 {
@@ -36,8 +35,8 @@ namespace OpenRA.Android
 			Directory.CreateDirectory(Path.Combine(SupportDir, "Replays"));
 			Directory.CreateDirectory(Path.Combine(SupportDir, "Content"));
 
-			ALog.Info("OpenRA.Bootstrap", $"SupportDir={SupportDir}");
-			ALog.Info("OpenRA.Bootstrap", $"CacheDir={CacheDir}");
+			AndroidFileLog.Info("OpenRA.Bootstrap", $"SupportDir={SupportDir}");
+			AndroidFileLog.Info("OpenRA.Bootstrap", $"CacheDir={CacheDir}");
 
 			AndroidNativeBootstrap.Init();
 
@@ -46,7 +45,7 @@ namespace OpenRA.Android
 			Game.PlatformFactory = () => new AndroidPlatform();
 
 			if (!IsContentReady())
-				ALog.Info("OpenRA.Bootstrap", "Content not ready — first-launch path");
+				AndroidFileLog.Info("OpenRA.Bootstrap", "Content not ready — first-launch path");
 
 			IsRunning = true;
 
@@ -54,9 +53,9 @@ namespace OpenRA.Android
 			{
 				try
 				{
-					ALog.Info("OpenRA.Bootstrap", $"InitializeAndRun mod={mod}");
+					AndroidFileLog.Info("OpenRA.Bootstrap", $"InitializeAndRun mod={mod}");
 					if (!AndroidEgl.MakeCurrent())
-						ALog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent on game thread failed: " + AndroidEgl.LastError);
+						AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent on game thread failed: " + AndroidEgl.LastError);
 
 					Game.InitializeAndRun(new[]
 					{
@@ -67,12 +66,12 @@ namespace OpenRA.Android
 				}
 				catch (Exception e)
 				{
-					ALog.Error("OpenRA.Bootstrap", $"Engine failed: {e}");
+					AndroidFileLog.Error("OpenRA.Bootstrap", $"Engine failed: {e}");
 				}
 				finally
 				{
 					IsRunning = false;
-					ALog.Info("OpenRA.Bootstrap", "Engine exited");
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Engine exited");
 				}
 			})
 			{

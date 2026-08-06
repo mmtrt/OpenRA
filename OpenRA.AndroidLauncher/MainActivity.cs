@@ -1,6 +1,7 @@
 // Android entry point — arm64-v8a only, Rusted Warfare touch.
 
 using System;
+using Android;
 using Android.App;
 using Android.Content.PM;
 using Android.OS;
@@ -25,10 +26,16 @@ namespace OpenRA.Android
 		GameSurfaceView surfaceView;
 		TextView statusOverlay;
 		bool bootstrapAttempted;
+		const int StoragePermissionRequest = 1001;
 
 		protected override void OnCreate(Bundle savedInstanceState)
 		{
 			base.OnCreate(savedInstanceState);
+
+			RequestStorageIfNeeded();
+			AndroidFileLog.Init();
+			AndroidFileLog.Info("OpenRA.Main", "OnCreate");
+
 			OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
 
 			Window.AddFlags(WindowManagerFlags.Fullscreen);
@@ -41,9 +48,9 @@ namespace OpenRA.Android
 
 			statusOverlay = new TextView(this)
 			{
-				Text = "OpenRA Android (arm64)\nRW touch ready\nSurfaceView active",
+				Text = "OpenRA Android (arm64)\nRW touch ready\nLog: " + (AndroidFileLog.ActivePath ?? AndroidFileLog.PreferredPath),
 				Gravity = GravityFlags.Center,
-				TextSize = 14f
+				TextSize = 12f
 			};
 			statusOverlay.SetBackgroundColor(AColor.Argb(160, 0, 0, 0));
 			statusOverlay.SetTextColor(AColor.White);
@@ -59,13 +66,58 @@ namespace OpenRA.Android
 			SetContentView(layout);
 		}
 
+		void RequestStorageIfNeeded()
+		{
+			if ((int)Build.VERSION.SdkInt >= 30)
+			{
+				// MANAGE_EXTERNAL_STORAGE required for arbitrary /storage/emulated/0/OpenRa
+				try
+				{
+					if (!Android.OS.Environment.IsExternalStorageManager)
+					{
+						AndroidFileLog.Warn("OpenRA.Main", "All-files access not granted; will try path then fall back");
+					}
+				}
+				catch { /* older bindings */ }
+				return;
+			}
+
+			if ((int)Build.VERSION.SdkInt >= 23)
+			{
+				if (CheckSelfPermission(Manifest.Permission.WriteExternalStorage) != Permission.Granted)
+				{
+					RequestPermissions(
+						new[] { Manifest.Permission.WriteExternalStorage, Manifest.Permission.ReadExternalStorage },
+						StoragePermissionRequest);
+				}
+			}
+		}
+
+		public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+		{
+			base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+			if (requestCode == StoragePermissionRequest)
+			{
+				AndroidFileLog.Init();
+				AndroidFileLog.Info("OpenRA.Main", "Storage permission result; log=" + AndroidFileLog.ActivePath);
+			}
+		}
+
 		public bool OnTouch(View v, MotionEvent e)
 		{
 			if (!bootstrapAttempted && surfaceView.IsSurfaceReady)
 			{
 				bootstrapAttempted = true;
-				EngineBootstrap.Start(surfaceView, "ra");
-				statusOverlay.Text = "OpenRA Android (arm64)\nEngine starting…\nPlatformFactory registered";
+				try
+				{
+					EngineBootstrap.Start(surfaceView, "ra");
+					statusOverlay.Text = "OpenRA Android (arm64)\nEngine starting…\nLog: " + AndroidFileLog.ActivePath;
+				}
+				catch (Exception ex)
+				{
+					AndroidFileLog.Exception("OpenRA.Main", ex);
+					statusOverlay.Text = "Bootstrap failed — see error.log";
+				}
 			}
 
 			PlatformWindow ??= OpenRA.Platforms.Android.AndroidPlatformWindow.Current;
@@ -109,6 +161,7 @@ namespace OpenRA.Android
 		{
 			base.OnPause();
 			PlatformWindow?.SetSuspended(true);
+			AndroidFileLog.Info("OpenRA.Main", "OnPause");
 		}
 
 		protected override void OnResume()
@@ -116,10 +169,12 @@ namespace OpenRA.Android
 			base.OnResume();
 			PlatformWindow?.SetSuspended(false);
 			OpenRA.Platforms.Android.AndroidEgl.MakeCurrent();
+			AndroidFileLog.Info("OpenRA.Main", "OnResume");
 		}
 
 		protected override void OnDestroy()
 		{
+			AndroidFileLog.Info("OpenRA.Main", "OnDestroy");
 			EngineBootstrap.Stop();
 			base.OnDestroy();
 		}
