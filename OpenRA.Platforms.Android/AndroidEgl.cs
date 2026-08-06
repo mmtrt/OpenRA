@@ -7,15 +7,11 @@
 
 using System;
 using Android.Opengl;
-using Android.Util;
 using Android.Views;
+using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
 {
-	/// <summary>
-	/// Process-wide EGL display / ES 3.0 context / window surface.
-	/// Driven by GameSurfaceView lifecycle; used by AndroidGraphicsContext.Present.
-	/// </summary>
 	public static class AndroidEgl
 	{
 		const int EglContextClientVersion = 0x3098;
@@ -56,7 +52,7 @@ namespace OpenRA.Platforms.Android
 					if (!EGL14.EglInitialize(display, version, 0, version, 1))
 						return Fail("eglInitialize failed: " + EglError());
 
-					Log.Info("OpenRA.EGL", $"EGL {version[0]}.{version[1]}");
+					ALog.Info("OpenRA.EGL", $"EGL {version[0]}.{version[1]}");
 
 					int[] attribList =
 					{
@@ -76,7 +72,7 @@ namespace OpenRA.Platforms.Android
 					if (!EGL14.EglChooseConfig(display, attribList, 0, configs, 0, configs.Length, numConfigs, 0)
 					    || numConfigs[0] == 0)
 					{
-						Log.Warn("OpenRA.EGL", "ES3 config missing, trying ES2-bit RGBA8888");
+						ALog.Warn("OpenRA.EGL", "ES3 config missing, trying ES2-bit RGBA8888");
 						attribList = new[]
 						{
 							EGL14.EglRedSize, 8,
@@ -99,7 +95,7 @@ namespace OpenRA.Platforms.Android
 					context = EGL14.EglCreateContext(display, config, EGL14.EglNoContext, ctxAttribs, 0);
 					if (context == null || context == EGL14.EglNoContext)
 					{
-						Log.Warn("OpenRA.EGL", "ES3 context failed, trying ES2");
+						ALog.Warn("OpenRA.EGL", "ES3 context failed, trying ES2");
 						ctxAttribs = new[] { EglContextClientVersion, 2, EGL14.EglNone };
 						context = EGL14.EglCreateContext(display, config, EGL14.EglNoContext, ctxAttribs, 0);
 						if (context == null || context == EGL14.EglNoContext)
@@ -113,7 +109,7 @@ namespace OpenRA.Platforms.Android
 
 					initialized = true;
 					LastError = "";
-					Log.Info("OpenRA.EGL", $"ready {SurfaceWidth}x{SurfaceHeight}");
+					ALog.Info("OpenRA.EGL", $"ready {SurfaceWidth}x{SurfaceHeight}");
 					return true;
 				}
 				catch (Exception e)
@@ -158,7 +154,7 @@ namespace OpenRA.Platforms.Android
 				if (!initialized || surface == null || surface == EGL14.EglNoSurface)
 					return;
 				if (!EGL14.EglSwapBuffers(display, surface))
-					Log.Warn("OpenRA.EGL", "eglSwapBuffers: " + EglError());
+					ALog.Warn("OpenRA.EGL", "eglSwapBuffers: " + EglError());
 			}
 		}
 
@@ -209,7 +205,7 @@ namespace OpenRA.Platforms.Android
 		static bool Fail(string message)
 		{
 			LastError = message;
-			Log.Error("OpenRA.EGL", message);
+			ALog.Error("OpenRA.EGL", message);
 			DestroyUnlocked();
 			return false;
 		}

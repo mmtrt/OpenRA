@@ -10,11 +10,71 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using Android.Opengl;
+using Java.Nio;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
+using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
 {
+	static class GlesBuffers
+	{
+		public static ByteBuffer ToByteBuffer(byte[] data)
+		{
+			var bb = ByteBuffer.AllocateDirect(data.Length);
+			bb.Order(ByteOrder.NativeOrder());
+			bb.Put(data);
+			bb.Position(0);
+			return bb;
+		}
+
+		public static ByteBuffer ToByteBuffer(float[] data)
+		{
+			var bb = ByteBuffer.AllocateDirect(data.Length * 4);
+			bb.Order(ByteOrder.NativeOrder());
+			var fb = bb.AsFloatBuffer();
+			fb.Put(data);
+			bb.Position(0);
+			return bb;
+		}
+
+		public static ByteBuffer ToByteBuffer<T>(T[] data, int length, int elementSize) where T : struct
+		{
+			var bytes = length * elementSize;
+			var bb = ByteBuffer.AllocateDirect(bytes);
+			bb.Order(ByteOrder.NativeOrder());
+			var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+			try
+			{
+				var tmp = new byte[bytes];
+				Marshal.Copy(handle.AddrOfPinnedObject(), tmp, 0, bytes);
+				bb.Put(tmp);
+				bb.Position(0);
+			}
+			finally
+			{
+				handle.Free();
+			}
+
+			return bb;
+		}
+
+		public static ByteBuffer SliceElements(ByteBuffer source, int startElements, int elementSize, int count)
+		{
+			var start = startElements * elementSize;
+			var len = count * elementSize;
+			var bb = ByteBuffer.AllocateDirect(len);
+			bb.Order(ByteOrder.NativeOrder());
+			var tmp = new byte[len];
+			var dup = (ByteBuffer)source.Duplicate();
+			dup.Position(start);
+			dup.Get(tmp, 0, len);
+			bb.Put(tmp);
+			bb.Position(0);
+			return bb;
+		}
+	}
+
 	sealed class AndroidGraphicsContext : IGraphicsContext
 	{
 		int vao;
@@ -54,10 +114,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlClear(GLES20.GlColorBufferBit | GLES20.GlDepthBufferBit);
 		}
 
-		public void ClearDepthBuffer()
-		{
-			GLES20.GlClear(GLES20.GlDepthBufferBit);
-		}
+		public void ClearDepthBuffer() => GLES20.GlClear(GLES20.GlDepthBufferBit);
 
 		public void EnableDepthBuffer()
 		{
@@ -66,10 +123,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlDepthFunc(GLES20.GlLequal);
 		}
 
-		public void DisableDepthBuffer()
-		{
-			GLES20.GlDisable(GLES20.GlDepthTest);
-		}
+		public void DisableDepthBuffer() => GLES20.GlDisable(GLES20.GlDepthTest);
 
 		public void EnableScissor(int x, int y, int width, int height)
 		{
@@ -79,10 +133,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlScissor(x, y, width, height);
 		}
 
-		public void DisableScissor()
-		{
-			GLES20.GlDisable(GLES20.GlScissorTest);
-		}
+		public void DisableScissor() => GLES20.GlDisable(GLES20.GlScissorTest);
 
 		public void Present()
 		{
@@ -93,13 +144,13 @@ namespace OpenRA.Platforms.Android
 		public void SetBlendMode(BlendMode mode)
 		{
 			GLES20.GlBlendEquation(GLES20.GlFuncAdd);
-
 			switch (mode)
 			{
 				case BlendMode.None:
 					GLES20.GlDisable(GLES20.GlBlend);
 					break;
 				case BlendMode.Alpha:
+				case BlendMode.Translucent:
 					GLES20.GlEnable(GLES20.GlBlend);
 					GLES20.GlBlendFunc(GLES20.GlSrcAlpha, GLES20.GlOneMinusSrcAlpha);
 					break;
@@ -123,10 +174,6 @@ namespace OpenRA.Platforms.Android
 					GLES20.GlEnable(GLES20.GlBlend);
 					GLES20.GlBlendFunc(GLES20.GlOne, GLES20.GlOneMinusSrcColor);
 					break;
-				case BlendMode.Translucent:
-					GLES20.GlEnable(GLES20.GlBlend);
-					GLES20.GlBlendFunc(GLES20.GlSrcAlpha, GLES20.GlOneMinusSrcAlpha);
-					break;
 				default:
 					GLES20.GlEnable(GLES20.GlBlend);
 					GLES20.GlBlendFunc(GLES20.GlSrcAlpha, GLES20.GlOneMinusSrcAlpha);
@@ -134,28 +181,20 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
-		public void SetVSyncEnabled(bool enabled)
-		{
-			// Window-system swap interval is controlled by EGL; no-op on ES via this path.
-		}
+		public void SetVSyncEnabled(bool enabled) { }
 
 		static int ModeFromPrimitiveType(PrimitiveType pt) => pt switch
 		{
 			PrimitiveType.PointList => GLES20.GlPoints,
 			PrimitiveType.LineList => GLES20.GlLines,
-			PrimitiveType.TriangleList => GLES20.GlTriangles,
 			_ => GLES20.GlTriangles
 		};
 
 		public void DrawPrimitives(PrimitiveType pt, int firstVertex, int numVertices)
-		{
-			GLES20.GlDrawArrays(ModeFromPrimitiveType(pt), firstVertex, numVertices);
-		}
+			=> GLES20.GlDrawArrays(ModeFromPrimitiveType(pt), firstVertex, numVertices);
 
 		public void DrawElements(int numIndices, int offset)
-		{
-			GLES20.GlDrawElements(GLES20.GlTriangles, numIndices, GLES20.GlUnsignedInt, offset);
-		}
+			=> GLES20.GlDrawElements(GLES20.GlTriangles, numIndices, GLES20.GlUnsignedInt, offset);
 
 		public IVertexBuffer<T> CreateEmptyVertexBuffer<T>(int size) where T : struct
 			=> new AndroidVertexBuffer<T>(size);
@@ -166,17 +205,10 @@ namespace OpenRA.Platforms.Android
 		public T[] CreateVertices<T>(int size) where T : struct => new T[size];
 
 		public IIndexBuffer CreateIndexBuffer(uint[] indices) => new AndroidIndexBuffer(indices);
-
 		public ITexture CreateTexture() => new AndroidTexture();
-
-		public IFrameBuffer CreateFrameBuffer(Size s)
-			=> new AndroidFrameBuffer(s, Color.FromArgb(0));
-
-		public IFrameBuffer CreateFrameBuffer(Size s, Color clearColor)
-			=> new AndroidFrameBuffer(s, clearColor);
-
-		public IShader CreateShader(IShaderBindings shaderBindings)
-			=> new AndroidShader(shaderBindings);
+		public IFrameBuffer CreateFrameBuffer(Size s) => new AndroidFrameBuffer(s, Color.FromArgb(0));
+		public IFrameBuffer CreateFrameBuffer(Size s, Color clearColor) => new AndroidFrameBuffer(s, clearColor);
+		public IShader CreateShader(IShaderBindings shaderBindings) => new AndroidShader(shaderBindings);
 
 		public void Dispose()
 		{
@@ -192,7 +224,7 @@ namespace OpenRA.Platforms.Android
 	{
 		readonly int buffer;
 		readonly int elementSize;
-		bool dynamic;
+		readonly bool dynamic;
 
 		public AndroidVertexBuffer(int size)
 		{
@@ -202,7 +234,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlGenBuffers(1, ids, 0);
 			buffer = ids[0];
 			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
-			GLES20.GlBufferData(GLES20.GlArrayBuffer, size * elementSize, IntPtr.Zero, GLES20.GlDynamicDraw);
+			GLES20.GlBufferData(GLES20.GlArrayBuffer, size * elementSize, null, GLES20.GlDynamicDraw);
 		}
 
 		public AndroidVertexBuffer(T[] data, bool dynamic)
@@ -215,45 +247,31 @@ namespace OpenRA.Platforms.Android
 			SetData(data, data.Length);
 		}
 
-		public void Bind()
-		{
-			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
-		}
+		public void Bind() => GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
 
 		public void SetData(T[] vertices, int length)
 		{
-			var handle = GCHandle.Alloc(vertices, GCHandleType.Pinned);
-			try
-			{
-				var ptr = handle.AddrOfPinnedObject();
-				var usage = dynamic ? GLES20.GlDynamicDraw : GLES20.GlStaticDraw;
-				GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
-				GLES20.GlBufferData(GLES20.GlArrayBuffer, length * elementSize, ptr, usage);
-			}
-			finally
-			{
-				handle.Free();
-			}
+			var usage = dynamic ? GLES20.GlDynamicDraw : GLES20.GlStaticDraw;
+			var bb = GlesBuffers.ToByteBuffer(vertices, length, elementSize);
+			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
+			GLES20.GlBufferData(GLES20.GlArrayBuffer, length * elementSize, bb, usage);
 		}
 
-		public void SetData(ref T[] vertices, int length)
-		{
-			SetData(vertices, length);
-		}
+		public void SetData(ref T[] vertices, int length) => SetData(vertices, length);
 
 		public void SetData(T[] vertices, int offset, int start, int length)
 		{
-			var handle = GCHandle.Alloc(vertices, GCHandleType.Pinned);
-			try
-			{
-				var ptr = IntPtr.Add(handle.AddrOfPinnedObject(), start * elementSize);
-				GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
-				GLES20.GlBufferSubData(GLES20.GlArrayBuffer, offset * elementSize, length * elementSize, ptr);
-			}
-			finally
-			{
-				handle.Free();
-			}
+			var bb = GlesBuffers.ToByteBuffer(vertices, start + length, elementSize);
+			// sub-data from element 'start'
+			var slice = ByteBuffer.AllocateDirect(length * elementSize);
+			slice.Order(ByteOrder.NativeOrder());
+			var tmp = new byte[length * elementSize];
+			bb.Position(start * elementSize);
+			bb.Get(tmp);
+			slice.Put(tmp);
+			slice.Position(0);
+			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
+			GLES20.GlBufferSubData(GLES20.GlArrayBuffer, offset * elementSize, length * elementSize, slice);
 		}
 
 		public void Dispose()
@@ -272,23 +290,14 @@ namespace OpenRA.Platforms.Android
 			var ids = new int[1];
 			GLES20.GlGenBuffers(1, ids, 0);
 			buffer = ids[0];
-			var handle = GCHandle.Alloc(indices, GCHandleType.Pinned);
-			try
-			{
-				GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
-				GLES20.GlBufferData(GLES20.GlElementArrayBuffer, indices.Length * sizeof(uint),
-					handle.AddrOfPinnedObject(), GLES20.GlStaticDraw);
-			}
-			finally
-			{
-				handle.Free();
-			}
+			var bytes = new byte[indices.Length * 4];
+			Buffer.BlockCopy(indices, 0, bytes, 0, bytes.Length);
+			var bb = GlesBuffers.ToByteBuffer(bytes);
+			GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
+			GLES20.GlBufferData(GLES20.GlElementArrayBuffer, bytes.Length, bb, GLES20.GlStaticDraw);
 		}
 
-		public void Bind()
-		{
-			GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
-		}
+		public void Bind() => GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
 
 		public void Dispose()
 		{
@@ -347,35 +356,20 @@ namespace OpenRA.Platforms.Android
 		{
 			EnsureTexture();
 			size = new Size(width, height);
-			var handle = GCHandle.Alloc(colors, GCHandleType.Pinned);
-			try
-			{
-				GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
-					GLES20.GlRgba, GLES20.GlUnsignedByte, handle.AddrOfPinnedObject());
-			}
-			finally
-			{
-				handle.Free();
-			}
+			var bb = GlesBuffers.ToByteBuffer(colors);
+			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
+			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
+				GLES20.GlRgba, GLES20.GlUnsignedByte, bb);
 		}
 
 		public void SetFloatData(float[] data, int width, int height)
 		{
 			EnsureTexture();
 			size = new Size(width, height);
-			var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			try
-			{
-				GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-				// RGBA float
-				GLES30.GlTexImage2D(GLES20.GlTexture2d, 0, GLES30.GlRgba16f, width, height, 0,
-					GLES20.GlRgba, GLES20.GlFloat, handle.AddrOfPinnedObject());
-			}
-			finally
-			{
-				handle.Free();
-			}
+			var bb = GlesBuffers.ToByteBuffer(data);
+			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
+			GLES30.GlTexImage2D(GLES20.GlTexture2d, 0, GLES30.GlRgba16f, width, height, 0,
+				GLES20.GlRgba, GLES20.GlFloat, bb);
 		}
 
 		public void SetEmpty(int width, int height)
@@ -384,7 +378,7 @@ namespace OpenRA.Platforms.Android
 			size = new Size(width, height);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
 			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
-				GLES20.GlRgba, GLES20.GlUnsignedByte, IntPtr.Zero);
+				GLES20.GlRgba, GLES20.GlUnsignedByte, null);
 		}
 
 		public void SetDataFromReadBuffer(Rectangle rect)
@@ -399,9 +393,7 @@ namespace OpenRA.Platforms.Android
 		{
 			var w = Math.Max(1, size.Width);
 			var h = Math.Max(1, size.Height);
-			var data = new byte[w * h * 4];
-			// Full FBO readback path omitted for non-FBO textures; return zeros
-			return data;
+			return new byte[w * h * 4];
 		}
 
 		public void Dispose()
@@ -421,7 +413,7 @@ namespace OpenRA.Platforms.Android
 		readonly AndroidTexture texture = new();
 		int framebuffer;
 		int depth;
-		int[] savedViewport = new int[4];
+		readonly int[] savedViewport = new int[4];
 
 		public ITexture Texture => texture;
 
@@ -449,7 +441,7 @@ namespace OpenRA.Platforms.Android
 
 			var status = GLES20.GlCheckFramebufferStatus(GLES20.GlFramebuffer);
 			if (status != GLES20.GlFramebufferComplete)
-				Android.Util.Log.Error("OpenRA.GL", $"Framebuffer incomplete: 0x{status:X}");
+				ALog.Error("OpenRA.GL", $"Framebuffer incomplete: 0x{status:X}");
 
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
 		}
@@ -475,10 +467,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlScissor(rect.Left, rect.Top, rect.Width, rect.Height);
 		}
 
-		public void DisableScissor()
-		{
-			GLES20.GlDisable(GLES20.GlScissorTest);
-		}
+		public void DisableScissor() => GLES20.GlDisable(GLES20.GlScissorTest);
 
 		public void Dispose()
 		{
@@ -513,7 +502,6 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlAttachShader(program, vs);
 			GLES20.GlAttachShader(program, fs);
 
-			// Bind attribute locations from OpenRA shader bindings
 			if (bindings.Attributes != null)
 			{
 				for (var i = 0; i < bindings.Attributes.Length; i++)
@@ -524,15 +512,11 @@ namespace OpenRA.Platforms.Android
 			var linkStatus = new int[1];
 			GLES20.GlGetProgramiv(program, GLES20.GlLinkStatus, linkStatus, 0);
 			if (linkStatus[0] == 0)
-			{
-				var log = GLES20.GlGetProgramInfoLog(program);
-				Android.Util.Log.Error("OpenRA.GL", "Shader link failed: " + log);
-			}
+				ALog.Error("OpenRA.GL", "Shader link failed: " + GLES20.GlGetProgramInfoLog(program));
 
 			GLES20.GlDeleteShader(vs);
 			GLES20.GlDeleteShader(fs);
 
-			// Enable vertex attributes
 			if (bindings.Attributes != null)
 			{
 				GLES20.GlUseProgram(program);
@@ -542,23 +526,19 @@ namespace OpenRA.Platforms.Android
 					if (loc < 0)
 						continue;
 					GLES20.GlEnableVertexAttribArray(loc);
-					var type = attr.Type == ShaderVertexAttributeType.Float ? GLES20.GlFloat : GLES20.GlFloat;
-					GLES20.GlVertexAttribPointer(loc, attr.Components, type, false, bindings.Stride, attr.Offset);
+					// Offset in bytes as integer — GLES20 binding accepts int for buffer offset when VBO is bound
+					GLES20.GlVertexAttribPointer(loc, attr.Components, GLES20.GlFloat, false, bindings.Stride, attr.Offset);
 				}
 			}
 		}
 
-		/// <summary>
-		/// Desktop GLSL often uses #version 140+; ES needs #version 300 es and precision.
-		/// Soft adaptation for common OpenRA shaders.
-		/// </summary>
 		static string AdaptShader(string code, bool vertex)
 		{
 			if (string.IsNullOrEmpty(code))
 				return code;
 
 			var sb = new StringBuilder();
-			if (!code.Contains("#version"))
+			if (!code.Contains("#version", StringComparison.Ordinal))
 			{
 				sb.AppendLine("#version 300 es");
 				if (!vertex)
@@ -566,10 +546,9 @@ namespace OpenRA.Platforms.Android
 			}
 			else
 			{
-				// Replace desktop version directives with ES 300
 				code = System.Text.RegularExpressions.Regex.Replace(
 					code, @"#version\s+\d+(\s+core)?", "#version 300 es");
-				if (!vertex && !code.Contains("precision "))
+				if (!vertex && !code.Contains("precision ", StringComparison.Ordinal))
 					sb.AppendLine("precision mediump float;");
 			}
 
@@ -585,11 +564,7 @@ namespace OpenRA.Platforms.Android
 			var status = new int[1];
 			GLES20.GlGetShaderiv(shader, GLES20.GlCompileStatus, status, 0);
 			if (status[0] == 0)
-			{
-				var log = GLES20.GlGetShaderInfoLog(shader);
-				Android.Util.Log.Error("OpenRA.GL", "Shader compile failed: " + log);
-			}
-
+				ALog.Error("OpenRA.GL", "Shader compile failed: " + GLES20.GlGetShaderInfoLog(shader));
 			return shader;
 		}
 
@@ -608,10 +583,7 @@ namespace OpenRA.Platforms.Android
 			textureUnit = 0;
 		}
 
-		public void PrepareRender()
-		{
-			Bind();
-		}
+		public void PrepareRender() => Bind();
 
 		public void SetBool(string name, bool value)
 		{
@@ -646,8 +618,7 @@ namespace OpenRA.Platforms.Android
 			var loc = Uniform(name);
 			if (loc < 0)
 				return;
-			var span = vec.Span;
-			var arr = span.Length == length ? span.ToArray() : span[..Math.Min(length, span.Length)].ToArray();
+			var arr = vec.Span.Slice(0, Math.Min(length, vec.Length)).ToArray();
 			switch (length)
 			{
 				case 1: GLES20.GlUniform1fv(loc, 1, arr, 0); break;
@@ -677,7 +648,6 @@ namespace OpenRA.Platforms.Android
 		}
 	}
 
-	/// <summary>Minimal IFont until FreeType is wired.</summary>
 	sealed class AndroidStubFont : IFont
 	{
 		public FontGlyph CreateGlyph(char c, int size, float deviceScale)
