@@ -291,7 +291,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlGenBuffers(1, ids, 0);
 			buffer = ids[0];
 			var bytes = new byte[indices.Length * 4];
-			Buffer.BlockCopy(indices, 0, bytes, 0, bytes.Length);
+			System.Buffer.BlockCopy(indices, 0, bytes, 0, bytes.Length);
 			var bb = GlesBuffers.ToByteBuffer(bytes);
 			GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
 			GLES20.GlBufferData(GLES20.GlElementArrayBuffer, bytes.Length, bb, GLES20.GlStaticDraw);
@@ -448,7 +448,7 @@ namespace OpenRA.Platforms.Android
 
 		public void Bind()
 		{
-			GLES20.GlGetIntegerv(GLES20.GlViewport, savedViewport, 0);
+			GLES20.GlGetIntegerv(0x0BA2 /* GL_VIEWPORT */, savedViewport, 0);
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, framebuffer);
 			GLES20.GlViewport(0, 0, size.Width, size.Height);
 			GLES20.GlClearColor(clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f);
