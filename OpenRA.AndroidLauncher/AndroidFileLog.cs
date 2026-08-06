@@ -66,26 +66,30 @@ namespace OpenRA.Android
 
 		static IEnumerable<string> CandidateDirs()
 		{
+			var dirs = new List<string>();
+
 			// 1) App-specific external — no special permission on modern Android
 			try
 			{
 				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
 				if (!string.IsNullOrEmpty(ext))
-					yield return Path.Combine(ext, PublicDirName);
+					dirs.Add(Path.Combine(ext, PublicDirName));
 			}
 			catch { /* ignore */ }
 
 			// 2) Public /storage/emulated/0/OpenRa (needs storage permission / all-files access)
-			yield return PreferredPublicDir;
+			dirs.Add(PreferredPublicDir);
 
 			// 3) Internal app files
 			try
 			{
 				var internalRoot = Application.Context.FilesDir?.AbsolutePath;
 				if (!string.IsNullOrEmpty(internalRoot))
-					yield return Path.Combine(internalRoot, PublicDirName);
+					dirs.Add(Path.Combine(internalRoot, PublicDirName));
 			}
 			catch { /* ignore */ }
+
+			return dirs;
 		}
 
 		public static void Info(string tag, string message) => WriteLine("INFO", tag, message);
