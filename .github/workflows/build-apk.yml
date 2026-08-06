@@ -435,17 +435,3 @@ jobs:
           path: ${{ steps.collect.outputs.apk_path }}
           if-no-files-found: error
           retention-days: 14
-
-  test-gestures:
-    name: Gesture unit harness
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-      - name: Note
-        run: |
-          echo "Gesture harness is not yet a formal test project."
-          echo "Enable when OpenRA.Platforms.Android references real OpenRA.Game types."
