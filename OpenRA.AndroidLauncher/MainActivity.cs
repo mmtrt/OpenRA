@@ -2,10 +2,12 @@
 
 using System;
 using Android.App;
+using Android.Content.PM;
 using Android.OS;
 using Android.Views;
-using Android.Content.PM;
-using Android.Util;
+using Android.Widget;
+using AColor = global::Android.Graphics.Color;
+using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Android
 {
@@ -43,8 +45,8 @@ namespace OpenRA.Android
 				Gravity = GravityFlags.Center,
 				TextSize = 14f
 			};
-			statusOverlay.SetBackgroundColor(Android.Graphics.Color.Argb(160, 0, 0, 0));
-			statusOverlay.SetTextColor(Android.Graphics.Color.White);
+			statusOverlay.SetBackgroundColor(AColor.Argb(160, 0, 0, 0));
+			statusOverlay.SetTextColor(AColor.White);
 
 			var layout = new FrameLayout(this);
 			layout.AddView(surfaceView, new FrameLayout.LayoutParams(
@@ -59,7 +61,6 @@ namespace OpenRA.Android
 
 		public bool OnTouch(View v, MotionEvent e)
 		{
-			// Try bootstrap once the surface reports ready
 			if (!bootstrapAttempted && surfaceView.IsSurfaceReady)
 			{
 				bootstrapAttempted = true;
@@ -71,7 +72,7 @@ namespace OpenRA.Android
 			var input = PlatformWindow?.Input;
 			if (input == null)
 			{
-				Log.Debug("OpenRA.Touch", $"{e.ActionMasked} pointers={e.PointerCount}");
+				ALog.Debug("OpenRA.Touch", $"{e.ActionMasked} pointers={e.PointerCount}");
 				return true;
 			}
 
@@ -100,6 +101,7 @@ namespace OpenRA.Android
 					input.OnTouchCancel(id);
 					break;
 			}
+
 			return true;
 		}
 
@@ -113,12 +115,12 @@ namespace OpenRA.Android
 		{
 			base.OnResume();
 			PlatformWindow?.SetSuspended(false);
+			OpenRA.Platforms.Android.AndroidEgl.MakeCurrent();
 		}
 
 		protected override void OnDestroy()
 		{
 			EngineBootstrap.Stop();
-			PlatformWindow = null;
 			base.OnDestroy();
 		}
 	}

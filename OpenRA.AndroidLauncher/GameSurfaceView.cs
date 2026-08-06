@@ -2,10 +2,10 @@
 
 using System;
 using Android.Content;
-using Android.Util;
 using Android.Views;
 using OpenRA.Platforms.Android;
 using AndroidFormat = Android.Graphics.Format;
+using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Android
 {
@@ -17,7 +17,7 @@ namespace OpenRA.Android
 		public int SurfaceHeight { get; private set; }
 
 		public GameSurfaceView(Context context) : base(context) => InitHolder();
-		public GameSurfaceView(Context context, IAttributeSet attrs) : base(context, attrs) => InitHolder();
+		public GameSurfaceView(Context context, global::Android.Util.IAttributeSet attrs) : base(context, attrs) => InitHolder();
 
 		void InitHolder()
 		{
@@ -30,7 +30,7 @@ namespace OpenRA.Android
 
 		public void SurfaceCreated(ISurfaceHolder holder)
 		{
-			Log.Info("OpenRA.Surface", "SurfaceCreated");
+			ALog.Info("OpenRA.Surface", "SurfaceCreated");
 			var w = Width > 0 ? Width : 1280;
 			var h = Height > 0 ? Height : 720;
 			SurfaceWidth = w;
@@ -39,29 +39,29 @@ namespace OpenRA.Android
 			if (AndroidEgl.Initialize(holder, w, h))
 			{
 				surfaceReady = true;
-				Log.Info("OpenRA.Surface", $"EGL ready {w}x{h}");
+				ALog.Info("OpenRA.Surface", $"EGL ready {w}x{h}");
 			}
 			else
 			{
 				surfaceReady = false;
-				Log.Error("OpenRA.Surface", "EGL init failed: " + AndroidEgl.LastError);
+				ALog.Error("OpenRA.Surface", "EGL init failed: " + AndroidEgl.LastError);
 			}
 		}
 
 		public void SurfaceChanged(ISurfaceHolder holder, AndroidFormat format, int width, int height)
 		{
-			Log.Info("OpenRA.Surface", $"SurfaceChanged {width}x{height}");
+			ALog.Info("OpenRA.Surface", $"SurfaceChanged {width}x{height}");
 			SurfaceWidth = width;
 			SurfaceHeight = height;
 			if (!AndroidEgl.Resize(holder, width, height))
-				Log.Error("OpenRA.Surface", "EGL resize failed: " + AndroidEgl.LastError);
+				ALog.Error("OpenRA.Surface", "EGL resize failed: " + AndroidEgl.LastError);
 			else
 				surfaceReady = AndroidEgl.IsReady;
 		}
 
 		public void SurfaceDestroyed(ISurfaceHolder holder)
 		{
-			Log.Info("OpenRA.Surface", "SurfaceDestroyed");
+			ALog.Info("OpenRA.Surface", "SurfaceDestroyed");
 			surfaceReady = false;
 			AndroidEgl.Destroy();
 		}

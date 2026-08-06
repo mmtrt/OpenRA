@@ -1,13 +1,12 @@
 // Bootstrap — path injection, PlatformFactory, Game.InitializeAndRun.
-// arm64-v8a prototype.
 
 using System;
 using System.IO;
 using System.Threading;
 using Android.App;
-using Android.Util;
 using OpenRA;
 using OpenRA.Platforms.Android;
+using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Android
 {
@@ -20,10 +19,6 @@ namespace OpenRA.Android
 		const string ContentReadyMarker = ".content_ready";
 		static Thread gameThread;
 
-		/// <summary>
-		/// Call once GameSurfaceView reports IsSurfaceReady.
-		/// Sets Android support paths, registers PlatformFactory, starts the engine.
-		/// </summary>
 		public static void Start(GameSurfaceView surface, string mod = "ra")
 		{
 			if (IsRunning)
@@ -41,39 +36,28 @@ namespace OpenRA.Android
 			Directory.CreateDirectory(Path.Combine(SupportDir, "Replays"));
 			Directory.CreateDirectory(Path.Combine(SupportDir, "Content"));
 
-			Log.Info("OpenRA.Bootstrap", $"SupportDir={SupportDir}");
-			Log.Info("OpenRA.Bootstrap", $"CacheDir={CacheDir}");
+			ALog.Info("OpenRA.Bootstrap", $"SupportDir={SupportDir}");
+			ALog.Info("OpenRA.Bootstrap", $"CacheDir={CacheDir}");
 
-			// Inject Android paths before any Platform.SupportDir access
-			// Load arm64 .so packages before any P/Invoke
-			OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
+			AndroidNativeBootstrap.Init();
 
 			Platform.AndroidFilesDir = SupportDir;
 			Platform.AndroidCacheDir = CacheDir;
-
-			// Register platform without OpenRA.Game → Platforms.Android project reference
 			Game.PlatformFactory = () => new AndroidPlatform();
 
 			if (!IsContentReady())
-			{
-				Log.Info("OpenRA.Bootstrap", "Content not ready — first-launch path");
-				// Placeholder: mark ready so later boots skip until real content pipeline exists
-				// MarkContentReady();
-			}
+				ALog.Info("OpenRA.Bootstrap", "Content not ready — first-launch path");
 
 			IsRunning = true;
 
-			// Run the engine off the UI thread so MotionEvents keep flowing.
-			// NOTE: Real GLES requires the GL context on the correct thread;
-			// this will need alignment once EGL is implemented on GameSurfaceView.
 			gameThread = new Thread(() =>
 			{
 				try
 				{
-					Log.Info("OpenRA.Bootstrap", $"InitializeAndRun mod={mod}");
-					// Bind EGL to the game thread before the renderer starts
-					if (!OpenRA.Platforms.Android.AndroidEgl.MakeCurrent())
-						Log.Warn("OpenRA.Bootstrap", "EGL MakeCurrent on game thread failed: " + OpenRA.Platforms.Android.AndroidEgl.LastError);
+					ALog.Info("OpenRA.Bootstrap", $"InitializeAndRun mod={mod}");
+					if (!AndroidEgl.MakeCurrent())
+						ALog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent on game thread failed: " + AndroidEgl.LastError);
+
 					Game.InitializeAndRun(new[]
 					{
 						"Engine.Platform=Android",
@@ -83,12 +67,12 @@ namespace OpenRA.Android
 				}
 				catch (Exception e)
 				{
-					Log.Error("OpenRA.Bootstrap", $"Engine failed: {e}");
+					ALog.Error("OpenRA.Bootstrap", $"Engine failed: {e}");
 				}
 				finally
 				{
 					IsRunning = false;
-					Log.Info("OpenRA.Bootstrap", "Engine exited");
+					ALog.Info("OpenRA.Bootstrap", "Engine exited");
 				}
 			})
 			{
