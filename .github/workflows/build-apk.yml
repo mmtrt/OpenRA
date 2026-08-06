@@ -218,6 +218,18 @@ jobs:
           if [ -f "$OUT_DIR/liblua5.1.so" ] && [ ! -f "$OUT_DIR/liblua51.so" ]; then
             cp "$OUT_DIR/liblua5.1.so" "$OUT_DIR/liblua51.so"
           fi
+          # Strip debug symbols from all .so (smaller APK)
+          STRIP="$TOOLCHAIN/bin/llvm-strip"
+          if [ -x "$STRIP" ]; then
+            echo "=== Stripping native libraries ==="
+            for so in "$OUT_DIR"/*.so; do
+              [ -f "$so" ] || continue
+              echo "strip $so"
+              "$STRIP" --strip-unneeded "$so" || "$STRIP" -S "$so" || true
+            done
+          else
+            echo "llvm-strip not found at $STRIP — skip"
+          fi
           echo "=== Native libraries built ==="
           ls -la "$OUT_DIR/"
 

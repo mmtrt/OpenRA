@@ -1,7 +1,6 @@
 // Android entry point — arm64-v8a only, Rusted Warfare touch.
 
 using System;
-using Android;
 using Android.App;
 using Android.Content.PM;
 using Android.OS;
@@ -9,6 +8,8 @@ using Android.Views;
 using Android.Widget;
 using AColor = global::Android.Graphics.Color;
 using ALog = global::Android.Util.Log;
+using AManifest = global::Android.Manifest;
+using AEnv = global::Android.OS.Environment;
 
 namespace OpenRA.Android
 {
@@ -70,24 +71,21 @@ namespace OpenRA.Android
 		{
 			if ((int)Build.VERSION.SdkInt >= 30)
 			{
-				// MANAGE_EXTERNAL_STORAGE required for arbitrary /storage/emulated/0/OpenRa
 				try
 				{
-					if (!Android.OS.Environment.IsExternalStorageManager)
-					{
+					if (!AEnv.IsExternalStorageManager)
 						AndroidFileLog.Warn("OpenRA.Main", "All-files access not granted; will try path then fall back");
-					}
 				}
-				catch { /* older bindings */ }
+				catch { /* ignore */ }
 				return;
 			}
 
 			if ((int)Build.VERSION.SdkInt >= 23)
 			{
-				if (CheckSelfPermission(Manifest.Permission.WriteExternalStorage) != Permission.Granted)
+				if (CheckSelfPermission(AManifest.Permission.WriteExternalStorage) != Permission.Granted)
 				{
 					RequestPermissions(
-						new[] { Manifest.Permission.WriteExternalStorage, Manifest.Permission.ReadExternalStorage },
+						new[] { AManifest.Permission.WriteExternalStorage, AManifest.Permission.ReadExternalStorage },
 						StoragePermissionRequest);
 				}
 			}

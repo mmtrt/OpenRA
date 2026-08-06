@@ -4,8 +4,9 @@ using System;
 using System.IO;
 using System.Text;
 using Android.App;
-using Android.OS;
 using ALog = global::Android.Util.Log;
+using AEnv = global::Android.OS.Environment;
+using AProcess = global::Android.OS.Process;
 
 namespace OpenRA.Android
 {
@@ -20,7 +21,7 @@ namespace OpenRA.Android
 
 		/// <summary>Preferred path: /storage/emulated/0/OpenRa/error.log</summary>
 		public static string PreferredPath =>
-			Path.Combine(Android.OS.Environment.ExternalStorageDirectory?.AbsolutePath
+			Path.Combine(AEnv.ExternalStorageDirectory?.AbsolutePath
 				?? "/storage/emulated/0", PublicDirName, ErrorFileName);
 
 		public static string ActivePath => logPath;
@@ -45,7 +46,7 @@ namespace OpenRA.Android
 						logPath = candidate;
 						writer.WriteLine();
 						writer.WriteLine($"===== OpenRA Android log start {DateTime.UtcNow:o} =====");
-						writer.WriteLine($"pid={Process.MyPid()} path={candidate}");
+						writer.WriteLine($"pid={AProcess.MyPid()} path={candidate}");
 						ALog.Info("OpenRA.Log", "File log: " + candidate);
 						return;
 					}
