@@ -1,4 +1,4 @@
-// Bootstrap — path injection, PlatformFactory, Game.InitializeAndRun.
+// Bootstrap — paths, content extract, PlatformFactory, safe engine start.
 
 using System;
 using System.IO;
@@ -15,87 +15,104 @@ namespace OpenRA.Android
 		public static string SupportDir { get; private set; }
 		public static string CacheDir { get; private set; }
 
-		const string ContentReadyMarker = ".content_ready";
 		static Thread gameThread;
+		static int startAttempts;
 
 		public static void Start(GameSurfaceView surface, string mod = "ra")
 		{
 			if (IsRunning)
 				return;
 
-			var context = Application.Context;
-			SupportDir = context.FilesDir?.AbsolutePath
-				?? Path.Combine(context.ApplicationInfo.DataDir, "files");
-			CacheDir = context.CacheDir?.AbsolutePath
-				?? Path.Combine(context.ApplicationInfo.DataDir, "cache");
-
-			Directory.CreateDirectory(SupportDir);
-			Directory.CreateDirectory(CacheDir);
-			Directory.CreateDirectory(Path.Combine(SupportDir, "maps"));
-			Directory.CreateDirectory(Path.Combine(SupportDir, "Replays"));
-			Directory.CreateDirectory(Path.Combine(SupportDir, "Content"));
-
-			AndroidFileLog.Info("OpenRA.Bootstrap", $"SupportDir={SupportDir}");
-			AndroidFileLog.Info("OpenRA.Bootstrap", $"CacheDir={CacheDir}");
-
-			AndroidNativeBootstrap.Init();
-
-			Platform.AndroidFilesDir = SupportDir;
-			Platform.AndroidCacheDir = CacheDir;
-			Game.PlatformFactory = () => new AndroidPlatform();
-
-			if (!IsContentReady())
-				AndroidFileLog.Info("OpenRA.Bootstrap", "Content not ready — first-launch path");
-
-			IsRunning = true;
-
-			gameThread = new Thread(() =>
+			try
 			{
-				try
-				{
-					AndroidFileLog.Info("OpenRA.Bootstrap", $"InitializeAndRun mod={mod}");
-					if (!AndroidEgl.MakeCurrent())
-						AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent on game thread failed: " + AndroidEgl.LastError);
+				var context = Application.Context;
+				SupportDir = context.GetExternalFilesDir(null)?.AbsolutePath
+					?? context.FilesDir?.AbsolutePath
+					?? Path.Combine(context.ApplicationInfo.DataDir, "files");
+				SupportDir = Path.Combine(SupportDir, "OpenRA");
+				CacheDir = context.CacheDir?.AbsolutePath
+					?? Path.Combine(context.ApplicationInfo.DataDir, "cache");
 
-					Game.InitializeAndRun(new[]
-					{
-						"Engine.Platform=Android",
-						"Game.Mod=" + mod,
-						"Engine.SupportDir=" + SupportDir
-					});
-				}
-				catch (Exception e)
+				AndroidFileLog.Init();
+				AndroidFileLog.Info("OpenRA.Bootstrap", $"Start attempt={++startAttempts} mod={mod}");
+
+				Directory.CreateDirectory(SupportDir);
+				Directory.CreateDirectory(CacheDir);
+
+				AndroidNativeBootstrap.Init();
+				ContentBootstrap.EnsureLayout(SupportDir);
+
+				Platform.AndroidFilesDir = SupportDir;
+				Platform.AndroidCacheDir = CacheDir;
+				Game.PlatformFactory = () => new AndroidPlatform();
+
+				if (!ContentBootstrap.HasAnyMod())
 				{
-					AndroidFileLog.Error("OpenRA.Bootstrap", $"Engine failed: {e}");
+					AndroidFileLog.Warn("OpenRA.Bootstrap",
+						"No mod.yaml under mods/ — engine will likely fail. " +
+						"Package mods into Assets/mods or copy onto device under SupportDir/mods.");
 				}
-				finally
+
+				IsRunning = true;
+				gameThread = new Thread(() => RunEngine(mod))
 				{
-					IsRunning = false;
-					AndroidFileLog.Info("OpenRA.Bootstrap", "Engine exited");
-				}
-			})
+					IsBackground = true,
+					Name = "OpenRA.Game"
+				};
+				gameThread.Start();
+			}
+			catch (Exception e)
 			{
-				IsBackground = true,
-				Name = "OpenRA.Game"
-			};
-			gameThread.Start();
+				IsRunning = false;
+				AndroidFileLog.Exception("OpenRA.Bootstrap", e);
+			}
 		}
 
-		public static bool IsContentReady()
+		static void RunEngine(string mod)
 		{
-			return File.Exists(Path.Combine(SupportDir ?? "", "Content", ContentReadyMarker));
-		}
+			try
+			{
+				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread enter");
+				if (!AndroidEgl.MakeCurrent())
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent failed: " + AndroidEgl.LastError);
 
-		public static void MarkContentReady()
-		{
-			var path = Path.Combine(SupportDir, "Content", ContentReadyMarker);
-			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-			File.WriteAllText(path, DateTime.UtcNow.ToString("o"));
+				// EngineDir should contain VERSION + mods relative paths
+				var engineDir = SupportDir;
+				var versionPath = Path.Combine(engineDir, "VERSION");
+				if (!File.Exists(versionPath))
+				{
+					File.WriteAllText(versionPath, "android-port-dev");
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Wrote placeholder VERSION");
+				}
+
+				var args = new[]
+				{
+					"Engine.Platform=Android",
+					"Game.Mod=" + mod,
+					"Engine.SupportDir=" + SupportDir,
+					"Engine.EngineDir=" + engineDir,
+					"Engine.ModSearchPaths=" + ContentBootstrap.ModsDir
+				};
+
+				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun " + string.Join(" ", args));
+				Game.InitializeAndRun(args);
+				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun returned");
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Exception("OpenRA.Bootstrap", e);
+			}
+			finally
+			{
+				IsRunning = false;
+				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread exit");
+			}
 		}
 
 		public static void Stop()
 		{
-			try { Game.Exit(); } catch { /* engine may not be up */ }
+			try { Game.Exit(); }
+			catch (Exception e) { AndroidFileLog.Exception("OpenRA.Bootstrap.Stop", e); }
 			IsRunning = false;
 			MainActivity.PlatformWindow = null;
 		}

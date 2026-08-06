@@ -49,7 +49,7 @@ namespace OpenRA.Android
 
 			statusOverlay = new TextView(this)
 			{
-				Text = "OpenRA Android (arm64)\nRW touch ready\nLog: " + (AndroidFileLog.ActivePath ?? AndroidFileLog.PreferredPath),
+				Text = "OpenRA Android (arm64)\nRW touch ready\nLog: " + (AndroidFileLog.ActiveDir ?? AndroidFileLog.PreferredPublicDir),
 				Gravity = GravityFlags.Center,
 				TextSize = 12f
 			};
@@ -97,7 +97,7 @@ namespace OpenRA.Android
 			if (requestCode == StoragePermissionRequest)
 			{
 				AndroidFileLog.Init();
-				AndroidFileLog.Info("OpenRA.Main", "Storage permission result; log=" + AndroidFileLog.ActivePath);
+				AndroidFileLog.Info("OpenRA.Main", "Storage permission result; logdir=" + AndroidFileLog.ActiveDir);
 			}
 		}
 
@@ -109,7 +109,7 @@ namespace OpenRA.Android
 				try
 				{
 					EngineBootstrap.Start(surfaceView, "ra");
-					statusOverlay.Text = "OpenRA Android (arm64)\nEngine starting…\nLog: " + AndroidFileLog.ActivePath;
+					statusOverlay.Text = "OpenRA Android (arm64)\nEngine starting…\nLog: " + AndroidFileLog.ActiveDir;
 				}
 				catch (Exception ex)
 				{

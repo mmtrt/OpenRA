@@ -392,6 +392,23 @@ jobs:
             --verbosity minimal
           find "$OUT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
 
+
+      - name: Strip published native libraries
+        run: |
+          set -euo pipefail
+          NDK_ROOT="${{ env.ANDROID_NDK_HOME }}"
+          STRIP=$(find "$NDK_ROOT" -name llvm-strip -type f 2>/dev/null | head -1 || true)
+          if [ -z "$STRIP" ]; then
+            echo "llvm-strip not found — skip"
+            exit 0
+          fi
+          OUT_DIR="${{ github.workspace }}/artifacts-apk"
+          # Strip any .so produced under publish / intermediate
+          find "$OUT_DIR" "${{ env.PROJECT_ROOT }}" -type f -name "*.so" 2>/dev/null | while read -r so; do
+            echo "strip $so"
+            "$STRIP" --strip-unneeded "$so" 2>/dev/null || "$STRIP" -S "$so" 2>/dev/null || true
+          done
+
       - name: Collect APK
         id: collect
         run: |
