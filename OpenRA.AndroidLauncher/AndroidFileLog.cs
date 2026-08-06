@@ -1,4 +1,4 @@
-// Logs to openra.log + error.log under OpenRa/ (public + app-external + internal).
+// Logs to openra.log + error.log under OpenRa/ (app-external first, then public, then internal).
 
 using System;
 using System.Collections.Generic;
@@ -39,7 +39,6 @@ namespace OpenRA.Android
 					try
 					{
 						Directory.CreateDirectory(dir);
-						// touch both log files
 						OpenWriter(Path.Combine(dir, MainLogName));
 						OpenWriter(Path.Combine(dir, ErrorLogName));
 						if (primaryDir == null)
@@ -60,46 +59,38 @@ namespace OpenRA.Android
 		static void OpenWriter(string path)
 		{
 			var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-			var w = new StreamWriter(fs, Encoding.UTF8) { AutoFlush = true };
-			Writers.Add(w);
+			Writers.Add(new StreamWriter(fs, Encoding.UTF8) { AutoFlush = true });
 		}
 
-		static IEnumerable<string> CandidateDirs()
+		static List<string> CandidateDirs()
 		{
-			var dirs = new List<string>();
+			var list = new List<string>();
 
-			// 1) App-specific external — no special permission on modern Android
 			try
 			{
 				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
 				if (!string.IsNullOrEmpty(ext))
-					dirs.Add(Path.Combine(ext, PublicDirName));
+					list.Add(Path.Combine(ext, PublicDirName));
 			}
 			catch { /* ignore */ }
 
-			// 2) Public /storage/emulated/0/OpenRa (needs storage permission / all-files access)
-			dirs.Add(PreferredPublicDir);
+			list.Add(PreferredPublicDir);
 
-			// 3) Internal app files
 			try
 			{
 				var internalRoot = Application.Context.FilesDir?.AbsolutePath;
 				if (!string.IsNullOrEmpty(internalRoot))
-					dirs.Add(Path.Combine(internalRoot, PublicDirName));
+					list.Add(Path.Combine(internalRoot, PublicDirName));
 			}
 			catch { /* ignore */ }
 
-			return dirs;
+			return list;
 		}
 
 		public static void Info(string tag, string message) => WriteLine("INFO", tag, message);
 		public static void Warn(string tag, string message) => WriteLine("WARN", tag, message);
 		public static void Error(string tag, string message) => WriteLine("ERROR", tag, message);
-
-		public static void Exception(string tag, Exception ex)
-		{
-			Error(tag, ex.ToString());
-		}
+		public static void Exception(string tag, Exception ex) => Error(tag, ex.ToString());
 
 		public static void WriteLine(string level, string tag, string message)
 		{
@@ -119,7 +110,7 @@ namespace OpenRA.Android
 				foreach (var w in Writers)
 				{
 					try { w.WriteLine(line); }
-					catch { /* ignore single-writer failure */ }
+					catch { /* ignore */ }
 				}
 			}
 		}

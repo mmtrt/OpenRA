@@ -1,7 +1,7 @@
 #region Copyright & License Information
 /*
- * Copyright (c) The OpenRA Developers and Contributors
- * Load packaged arm64 native libraries and resolve DllImport names.
+ * Load arm64 native libraries. SDL2 is NOT loaded here — JNI_OnLoad aborts
+ * without org.libsdl.app.SDLActivity. Prototype uses AndroidEgl + GLES only.
  */
 #endregion
 
@@ -33,7 +33,8 @@ namespace OpenRA.Platforms.Android
 				ALog.Warn("OpenRA.Native", "Could not set resolver on OpenRA.Game: " + e.Message);
 			}
 
-			Load("SDL2");
+			// Intentionally skip SDL2 — causes abort: ClassNotFoundException org.libsdl.app.SDLActivity
+			// Load("SDL2");
 			Load("openal");
 			Load("freetype");
 			Load("lua5.1");
@@ -69,6 +70,13 @@ namespace OpenRA.Platforms.Android
 				"freetype" or "freetype6" or "freetype-6" => "freetype",
 				_ => name
 			};
+
+			// Block accidental SDL2 resolve until Java side exists
+			if (name == "SDL2")
+			{
+				ALog.Warn("OpenRA.Native", "SDL2 resolve blocked (no SDLActivity) — using EGL path");
+				return IntPtr.Zero;
+			}
 
 			if (NativeLibrary.TryLoad(name, assembly, searchPath, out var handle))
 				return handle;

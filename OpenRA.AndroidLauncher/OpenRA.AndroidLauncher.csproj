@@ -23,8 +23,9 @@
     <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" AdditionalProperties="OpenRAAndroid=true" />
   </ItemGroup>
 
+  <!-- SDL2 intentionally omitted: libSDL2.so JNI_OnLoad aborts without full org.libsdl.app.
+       Prototype window/GL is AndroidEgl + GameSurfaceView. Re-add with real SDL Java later. -->
   <ItemGroup>
-    <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libSDL2.so" />
     <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libopenal.so" />
     <AndroidNativeLibrary Include="..\native\android\arm64-v8a\libfreetype.so" />
     <AndroidNativeLibrary Include="..\native\android\arm64-v8a\liblua5.1.so" />
@@ -39,4 +40,8 @@
       <AndroidNativeLibrary Include="..\native\android\arm64-v8a\liblua51.so" />
     </ItemGroup>
   </Target>
+
+  <ItemGroup>
+    <AndroidJavaSource Include="Java\org\libsdl\app\*.java" />
+  </ItemGroup>
 </Project>
