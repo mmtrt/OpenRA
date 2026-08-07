@@ -50,7 +50,11 @@ for mod in common common-content ra ra-content; do
   else
     echo "WARNING: mods/$mod not found"
     # ra + common are required for Red Alert
-    if [[ "$mod" == "ra" || "$mod" == "common" ]]; then
+    if [[ "$mod" == "ra" ]]; then
+      MISSING_MOD=1
+    fi
+    if [[ "$mod" == "common" ]]; then
+      echo "ERROR: mods/common is required (shared packages/fonts)"
       MISSING_MOD=1
     fi
   fi
@@ -159,12 +163,37 @@ require_file() {
   fi
 }
 
+# ra is a full mod; common/common-content are shared packages (no mod.yaml upstream)
 require_file "$OUT/mods/ra/mod.yaml"
 require_file "$OUT/mods/ra/rules/vehicles.yaml"
 require_file "$OUT/mods/ra/rules/defaults.yaml"
-require_file "$OUT/mods/common/mod.yaml"
 require_file "$OUT/assemblies/OpenRA.Mods.Common.dll"
 require_file "$OUT/assemblies/OpenRA.Mods.Cnc.dll"
+
+# Shared package dirs (OpenRA bleed: common has fonts/chrome/scripts — no mod.yaml)
+if [[ ! -d "$OUT/mods/common" ]]; then
+  echo "  MISSING mods/common/ directory"
+  FAIL=1
+else
+  # Need at least fonts used by SpriteFont
+  if [[ -f "$OUT/mods/common/FreeSans.ttf" ]] || [[ -f "$OUT/mods/common/FreeSansBold.ttf" ]]; then
+    echo "  OK mods/common/ (shared package + fonts)"
+  else
+    echo "  WARNING: mods/common/ missing FreeSans fonts"
+  fi
+fi
+
+if [[ ! -d "$OUT/mods/common-content" ]]; then
+  echo "  WARNING: mods/common-content/ missing (content installer chrome)"
+else
+  echo "  OK mods/common-content/"
+fi
+
+if [[ -f "$OUT/mods/ra-content/mod.yaml" ]]; then
+  echo "  OK mods/ra-content/mod.yaml"
+else
+  echo "  WARNING: mods/ra-content/mod.yaml missing"
+fi
 
 # V2RL must define Mobile in the packaged YAML (upstream does)
 if [[ -f "$OUT/mods/ra/rules/vehicles.yaml" ]]; then
