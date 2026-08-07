@@ -39,70 +39,95 @@ namespace OpenRA.Android
 		{
 			base.OnCreate(savedInstanceState);
 
-			RequestStorageIfNeeded();
-			if ((int)Build.VERSION.SdkInt >= 30 && !StorageAccess.HasAllFilesAccess())
+			try
 			{
-				// Optional: user can grant for /storage/emulated/0/OpenRA; app works without it
-				AndroidFileLog.Info("OpenRA.Main", "Android 11+ : app-external storage by default; all-files optional");
-			}
-			AndroidFileLog.Init();
-			AndroidFileLog.Info("OpenRA.Main", "OnCreate");
+				AndroidFileLog.Init();
+				AndroidFileLog.Info("OpenRA.Main", "OnCreate begin");
 
-			OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
-
-			Window.AddFlags(WindowManagerFlags.Fullscreen);
-			if (Window.DecorView != null)
-				Window.DecorView.SystemUiFlags =
-					SystemUiFlags.HideNavigation | SystemUiFlags.Fullscreen | SystemUiFlags.ImmersiveSticky;
-
-			root = new FrameLayout(this);
-			surfaceView = new GameSurfaceView(this);
-			surfaceView.SetOnTouchListener(this);
-			surfaceView.SurfaceReady += () =>
-			{
-				RunOnUiThread(() =>
+				try
 				{
-					if (installView == null && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
-						TryStartEngine();
+					RequestStorageIfNeeded();
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Main", "RequestStorage: " + e.Message);
+				}
+
+				// Native libs deferred until engine start — LoadLibrary in OnCreate can abort the process
+				AndroidFileLog.Info("OpenRA.Main", "Building UI");
+
+				Window.AddFlags(WindowManagerFlags.Fullscreen);
+				if (Window.DecorView != null)
+					Window.DecorView.SystemUiFlags =
+						SystemUiFlags.HideNavigation | SystemUiFlags.Fullscreen | SystemUiFlags.ImmersiveSticky;
+
+				root = new FrameLayout(this);
+				surfaceView = new GameSurfaceView(this);
+				surfaceView.SetOnTouchListener(this);
+				surfaceView.SurfaceReady += () =>
+				{
+					RunOnUiThread(() =>
+					{
+						try
+						{
+							if (installView == null
+							    && !string.IsNullOrEmpty(ContentBootstrap.SupportDir)
+							    && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
+								TryStartEngine();
+						}
+						catch (Exception e)
+						{
+							AndroidFileLog.Exception("OpenRA.Main.SurfaceReady", e);
+						}
+					});
+				};
+				root.AddView(surfaceView, new FrameLayout.LayoutParams(
+					ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+
+				statusOverlay = new TextView(this)
+				{
+					Text = "OpenRA Android",
+					Gravity = GravityFlags.Center,
+					TextSize = 13f
+				};
+				statusOverlay.SetBackgroundColor(AColor.Argb(160, 0, 0, 0));
+				statusOverlay.SetTextColor(AColor.White);
+				root.AddView(statusOverlay, new FrameLayout.LayoutParams(
+					ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
+				{
+					Gravity = GravityFlags.Bottom
 				});
-			};
-			root.AddView(surfaceView, new FrameLayout.LayoutParams(
-				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
-			statusOverlay = new TextView(this)
-			{
-				Text = "OpenRA Android",
-				Gravity = GravityFlags.Center,
-				TextSize = 13f
-			};
-			statusOverlay.SetBackgroundColor(AColor.Argb(160, 0, 0, 0));
-			statusOverlay.SetTextColor(AColor.White);
-			root.AddView(statusOverlay, new FrameLayout.LayoutParams(
-				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
-			{
-				Gravity = GravityFlags.Bottom
-			});
+				SetContentView(root);
+				AndroidFileLog.Info("OpenRA.Main", "ContentView set");
 
-			SetContentView(root);
+				ContentBootstrap.EnsureLayout(null);
+				var support = ContentBootstrap.SupportDir;
+				AndroidFileLog.Info("OpenRA.Main", "SupportDir=" + support);
 
-			// Resolve SupportDir early (creates public OpenRA tree when possible)
-			ContentBootstrap.EnsureLayout(null);
-			var support = ContentBootstrap.SupportDir;
-			AndroidFileLog.Info("OpenRA.Main", "SupportDir=" + support);
-			if ((int)Build.VERSION.SdkInt >= 30 && !StorageAccess.HasAllFilesAccess())
-				OfferAllFilesAccessOnce();
+				if (ContentProbe.IsBaseContentInstalled(support))
+				{
+					AndroidFileLog.Info("OpenRA.Main", "Content present — skip install UI");
+					statusOverlay.Text = "Content found — starting engine…\n" + support;
+				}
+				else
+				{
+					AndroidFileLog.Info("OpenRA.Main", "Content missing: " + ContentProbe.MissingSummary(support));
+					ShowInstallUi();
+				}
 
-
-			if (ContentProbe.IsBaseContentInstalled(support))
-			{
-				AndroidFileLog.Info("OpenRA.Main", "Content present — skip install UI");
-				statusOverlay.Text = "Content found — starting engine…\n" + support;
-				// Engine starts when surface is ready (OnTouch / surface path)
+				AndroidFileLog.Info("OpenRA.Main", "OnCreate done");
 			}
-			else
+			catch (Exception e)
 			{
-				AndroidFileLog.Info("OpenRA.Main", "Content missing: " + ContentProbe.MissingSummary(support));
-				ShowInstallUi();
+				try { AndroidFileLog.Exception("OpenRA.Main.OnCreate", e); }
+				catch { ALog.Error("OpenRA", "OnCreate fatal: " + e); }
+
+				try
+				{
+					Toast.MakeText(this, "Startup error — see openra.log", ToastLength.Long).Show();
+				}
+				catch { /* ignore */ }
 			}
 		}
 
@@ -169,14 +194,12 @@ namespace OpenRA.Android
 
 		void OnAdvancedInstall()
 		{
-			// Phase 1: point user at path; SAF picker can come next
 			var path = ContentProbe.ContentRaV2(ContentBootstrap.SupportDir);
 			var msg =
 				"Copy original RA files into:\n" + path + "\n\n" +
 				"Required: allies.mix, conquer.mix, interior.mix, hires.mix, lores.mix, " +
 				"local.mix, speech.mix, russian.mix, snow.mix, sounds.mix, temperat.mix\n\n" +
-				"Then tap Quick Install again or restart the app.";
-			AndroidFileLog.Info("OpenRA.Install", "Advanced Install help shown");
+				"Then restart the app or tap check again.";
 			new AlertDialog.Builder(this)
 				.SetTitle("Advanced Install")
 				.SetMessage(msg)
@@ -195,7 +218,11 @@ namespace OpenRA.Android
 							ToastLength.Long).Show();
 					}
 				})
-				.SetNeutralButton("All-files access", (s, e) => { StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this); })
+				.SetNeutralButton("All-files access", (s, e) =>
+				{
+					StorageAccess.PreferPublicOnNextLaunch();
+					StorageAccess.RequestAllFilesAccess(this);
+				})
 				.SetNegativeButton("OK", (s, e) => { })
 				.Show();
 		}
@@ -213,16 +240,12 @@ namespace OpenRA.Android
 			if (!surfaceView.IsSurfaceReady || !OpenRA.Platforms.Android.AndroidEgl.IsReady)
 			{
 				statusOverlay.Text = "Waiting for graphics surface…";
-				AndroidFileLog.Info("OpenRA.Main", "Engine deferred — surface/EGL not ready (egl=" +
-					OpenRA.Platforms.Android.AndroidEgl.IsReady + " err=" + OpenRA.Platforms.Android.AndroidEgl.LastError + ")");
-				// If surface exists but EGL was released, re-init on UI thread
-				if (surfaceView.Width > 0 && surfaceView.Holder?.Surface != null && !OpenRA.Platforms.Android.AndroidEgl.IsReady)
+				AndroidFileLog.Info("OpenRA.Main", "Engine deferred — surface/EGL not ready");
+				if (surfaceView.Width > 0 && surfaceView.Holder?.Surface != null
+				    && !OpenRA.Platforms.Android.AndroidEgl.IsReady)
 				{
-					AndroidFileLog.Info("OpenRA.Main", "Re-init EGL on UI thread");
 					if (OpenRA.Platforms.Android.AndroidEgl.Initialize(surfaceView.Holder, surfaceView.Width, surfaceView.Height))
 						AndroidFileLog.Info("OpenRA.Main", "EGL re-init ok");
-					else
-						AndroidFileLog.Warn("OpenRA.Main", "EGL re-init failed: " + OpenRA.Platforms.Android.AndroidEgl.LastError);
 				}
 				if (!surfaceView.IsSurfaceReady || !OpenRA.Platforms.Android.AndroidEgl.IsReady)
 					return;
@@ -233,7 +256,8 @@ namespace OpenRA.Android
 			statusOverlay.Text = "Starting OpenRA…\n" + ContentBootstrap.SupportDir;
 			try
 			{
-				// Unbind from UI so game thread can MakeCurrent
+				// Load native libs here (not OnCreate)
+				OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
 				OpenRA.Platforms.Android.AndroidEgl.ReleaseCurrent();
 				EngineBootstrap.Start(surfaceView, "ra");
 			}
@@ -247,7 +271,6 @@ namespace OpenRA.Android
 
 		public bool OnTouch(View v, MotionEvent e)
 		{
-			// Don't start engine while install UI is up
 			if (installView != null)
 				return true;
 
@@ -296,37 +319,21 @@ namespace OpenRA.Android
 		protected override void OnResume()
 		{
 			base.OnResume();
-			OpenRA.Platforms.Android.AndroidEgl.MakeCurrent();
+			try { OpenRA.Platforms.Android.AndroidEgl.MakeCurrent(); }
+			catch { /* ignore */ }
 			AndroidFileLog.Info("OpenRA.Main", "OnResume");
-			// If user returned after copying files
 			if (installView != null && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
 			{
 				HideInstallUi();
 				TryStartEngine();
 			}
 			else if (installView == null && !engineStartRequested
+			         && !string.IsNullOrEmpty(ContentBootstrap.SupportDir)
 			         && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir)
-			         && surfaceView.IsSurfaceReady)
+			         && surfaceView != null && surfaceView.IsSurfaceReady)
 			{
 				TryStartEngine();
 			}
-		}
-
-		
-		bool allFilesPromptShown;
-		void OfferAllFilesAccessOnce()
-		{
-			if (allFilesPromptShown)
-				return;
-			allFilesPromptShown = true;
-			new AlertDialog.Builder(this)
-				.SetTitle("Storage access")
-				.SetMessage(
-					"To use /storage/emulated/0/OpenRA (survives uninstall), grant All files access.\n\n" +
-					"Without it, data stays under Android/data/net.openra.android/files/OpenRA.")
-				.SetPositiveButton("Open settings", (s, e) => { StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this); })
-				.SetNegativeButton("Use app folder", (s, e) => { })
-				.Show();
 		}
 
 		void RequestStorageIfNeeded()
@@ -374,7 +381,10 @@ namespace OpenRA.Android
 		{
 			installCts?.Cancel();
 			AndroidFileLog.Info("OpenRA.Main", "OnDestroy");
-			EngineBootstrap.Stop();
+			try { EngineBootstrap.Stop(); }
+			catch { /* ignore */ }
+			try { OpenRA.Platforms.Android.AndroidEgl.Destroy(); }
+			catch { /* ignore */ }
 			base.OnDestroy();
 		}
 	}

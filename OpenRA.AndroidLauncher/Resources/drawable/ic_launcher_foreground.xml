@@ -1,21 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Gold star -->
-    <path
-        android:fillColor="#F0C020"
-        android:pathData="M54,28 L60,46 L79,46 L64,58 L70,76 L54,64 L38,76 L44,58 L29,46 L48,46 Z"/>
-    <!-- Red disc behind -->
-    <path
-        android:fillColor="#C02818"
-        android:pathData="M54,50 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0"/>
-    <!-- Simple sickle arc -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="3"
-        android:fillColor="#00000000"
-        android:pathData="M46,44 Q54,36 62,48"/>
-</vector>
+<!-- 18% inset ≈ Android adaptive-icon safe zone so artwork is not zoomed/cropped -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ra_icon"
+    android:insetLeft="18%"
+    android:insetTop="18%"
+    android:insetRight="18%"
+    android:insetBottom="18%" />

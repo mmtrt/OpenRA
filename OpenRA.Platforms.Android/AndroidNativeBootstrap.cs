@@ -1,7 +1,6 @@
 #region Copyright & License Information
 /*
- * Load arm64 native libraries. SDL2 is NOT loaded here — JNI_OnLoad aborts
- * without org.libsdl.app.SDLActivity. Prototype uses AndroidEgl + GLES only.
+ * Load arm64 native libraries. SDL2 is NOT loaded — JNI_OnLoad aborts without SDLActivity.
  */
 #endregion
 
@@ -22,25 +21,37 @@ namespace OpenRA.Platforms.Android
 				return;
 			loaded = true;
 
-			NativeLibrary.SetDllImportResolver(typeof(AndroidNativeBootstrap).Assembly, Resolve);
-			// FreeType DllImport lives on this assembly (AndroidFreeTypeFont)
-			NativeLibrary.SetDllImportResolver(typeof(AndroidFreeTypeFont).Assembly, Resolve);
 			try
 			{
-				var gameAsm = Assembly.Load("OpenRA.Game");
-				NativeLibrary.SetDllImportResolver(gameAsm, Resolve);
+				NativeLibrary.SetDllImportResolver(typeof(AndroidNativeBootstrap).Assembly, Resolve);
+				try
+				{
+					NativeLibrary.SetDllImportResolver(typeof(AndroidFreeTypeFont).Assembly, Resolve);
+				}
+				catch (Exception e)
+				{
+					ALog.Warn("OpenRA.Native", "FreeType resolver: " + e.Message);
+				}
+
+				try
+				{
+					var gameAsm = Assembly.Load("OpenRA.Game");
+					NativeLibrary.SetDllImportResolver(gameAsm, Resolve);
+				}
+				catch (Exception e)
+				{
+					ALog.Warn("OpenRA.Native", "Game resolver: " + e.Message);
+				}
+
+				Load("openal");
+				Load("freetype");
+				Load("lua5.1");
+				Load("lua51");
 			}
 			catch (Exception e)
 			{
-				ALog.Warn("OpenRA.Native", "Could not set resolver on OpenRA.Game: " + e.Message);
+				ALog.Error("OpenRA.Native", "Init failed: " + e);
 			}
-
-			// Intentionally skip SDL2 — causes abort: ClassNotFoundException org.libsdl.app.SDLActivity
-			// Load("SDL2");
-			Load("openal");
-			Load("freetype");
-			Load("lua5.1");
-			Load("lua51");
 		}
 
 		static void Load(string name)
@@ -49,6 +60,10 @@ namespace OpenRA.Platforms.Android
 			{
 				Java.Lang.JavaSystem.LoadLibrary(name);
 				ALog.Info("OpenRA.Native", "Loaded lib" + name + ".so");
+			}
+			catch (Java.Lang.Throwable t)
+			{
+				ALog.Warn("OpenRA.Native", "LoadLibrary(" + name + ") Throwable: " + t.Message);
 			}
 			catch (Exception e)
 			{
@@ -73,10 +88,9 @@ namespace OpenRA.Platforms.Android
 				_ => name
 			};
 
-			// Block accidental SDL2 resolve until Java side exists
 			if (name == "SDL2")
 			{
-				ALog.Warn("OpenRA.Native", "SDL2 resolve blocked (no SDLActivity) — using EGL path");
+				ALog.Warn("OpenRA.Native", "SDL2 resolve blocked");
 				return IntPtr.Zero;
 			}
 

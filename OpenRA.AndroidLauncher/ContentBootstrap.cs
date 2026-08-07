@@ -19,6 +19,18 @@ namespace OpenRA.Android
 
 		public static void EnsureLayout(string preferredSupportDir = null)
 		{
+			try
+			{
+				EnsureLayoutCore(preferredSupportDir);
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Exception("OpenRA.Content.EnsureLayout", e);
+			}
+		}
+
+		static void EnsureLayoutCore(string preferredSupportDir)
+		{
 			SupportDir = preferredSupportDir ?? StorageAccess.ResolveSupportDir();
 			Directory.CreateDirectory(SupportDir);
 			Directory.CreateDirectory(ModsDir);
@@ -58,6 +70,7 @@ namespace OpenRA.Android
 			PlaceAssembliesForLoader();
 			LogTree();
 		}
+
 
 
 		/// <summary>
