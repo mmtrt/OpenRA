@@ -9,6 +9,13 @@
     <DebugSymbols>true</DebugSymbols>
     <EngineRootPath Condition="'$(EngineRootPath)' == ''">..</EngineRootPath>
     <OutputPath>$(EngineRootPath)/bin</OutputPath>
+    <!-- The Android build (net10.0-android) MUST NOT share an output folder with the
+         desktop build (net10.0). AppendTargetFrameworkToOutputPath is false above, so
+         without this split, an Android build and a desktop build both write
+         "bin/OpenRA.Mods.Common.dll" — whichever runs last silently clobbers the other.
+         That was masking Android-only source fixes (e.g. #if ANDROID guards) because the
+         packaging script could pick up a desktop-built DLL that never saw them. -->
+    <OutputPath Condition="'$(OpenRAAndroid)' == 'true'">$(EngineRootPath)/bin-android</OutputPath>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <ExternalConsole>false</ExternalConsole>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
