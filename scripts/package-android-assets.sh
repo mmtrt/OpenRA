@@ -133,7 +133,7 @@ done
 
 # Explicit dep fill (AppImage checklist)
 for dep in \
-  TagLibSharp.dll MP3Sharp.dll NVorbis.dll Pfim.dll DiscordRPC.dll \
+  TagLibSharp.dll MP3Sharp.dll NVorbis.dll Pfim.dll \
   BeaconLib.dll rix0rrr.BeaconLib.dll FuzzyLogicLibrary.dll \
   ICSharpCode.SharpZipLib.dll Mono.Nat.dll Newtonsoft.Json.dll \
   Linguini.Bundle.dll Linguini.Shared.dll Linguini.Syntax.dll \
