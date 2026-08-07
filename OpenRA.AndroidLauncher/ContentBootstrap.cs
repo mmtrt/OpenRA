@@ -45,36 +45,7 @@ namespace OpenRA.Android
 
 		static string ResolveSupportDir()
 		{
-			// Prefer public path only if already writable (don't spam errors)
-			try
-			{
-				if (Directory.Exists(PublicRoot) || TryCreate(PublicRoot))
-				{
-					var probe = Path.Combine(PublicRoot, ".write_test");
-					File.WriteAllText(probe, "ok");
-					File.Delete(probe);
-					return PublicRoot;
-				}
-			}
-			catch (Exception e)
-			{
-				if (!publicPathWarned)
-				{
-					publicPathWarned = true;
-					AndroidFileLog.Info("OpenRA.Content",
-						"Using app storage (public /storage/emulated/0/OpenRA not writable). " + e.Message);
-				}
-			}
-
-			try
-			{
-				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
-				if (!string.IsNullOrEmpty(ext))
-					return Path.Combine(ext, "OpenRA");
-			}
-			catch { /* ignore */ }
-
-			return Path.Combine(Application.Context.FilesDir.AbsolutePath, "OpenRA");
+			return StorageAccess.ResolveSupportDir();
 		}
 
 		static bool TryCreate(string path)

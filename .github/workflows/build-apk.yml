@@ -424,7 +424,7 @@ jobs:
             echo "WARNING: glsl/ not found"
           fi
 
-          # --- mod assemblies ---
+          # --- mod assemblies + all managed deps from build output ---
           copy_dll() {
             local f="$1"
             if [ -f "$f" ]; then
@@ -433,29 +433,61 @@ jobs:
             fi
           }
 
-          # Common output locations after dotnet build
-          for dll in \
-            bin/OpenRA.Mods.Common.dll \
-            bin/OpenRA.Mods.Cnc.dll \
-            bin/OpenRA.Mods.D2k.dll \
-            bin/net10.0/OpenRA.Mods.Common.dll \
-            bin/net10.0/OpenRA.Mods.Cnc.dll \
-            bin/net10.0/OpenRA.Mods.D2k.dll \
-            "OpenRA.Mods.Common/bin/$CONFIG/net10.0/OpenRA.Mods.Common.dll" \
-            "OpenRA.Mods.Cnc/bin/$CONFIG/net10.0/OpenRA.Mods.Cnc.dll" \
-            "OpenRA.Mods.D2k/bin/$CONFIG/net10.0/OpenRA.Mods.D2k.dll"
+          # Prefer full output dir of Mods.Common (CopyLocalLockFileAssemblies=true)
+          # so TagLibSharp, MP3Sharp, NVorbis, Pfim, BeaconLib, FuzzyLogic, DiscordRPC, etc. come along.
+          COMMON_OUT=""
+          for candidate in \
+            "OpenRA.Mods.Common/bin/$CONFIG/net10.0" \
+            "OpenRA.Mods.Common/bin/$CONFIG" \
+            "bin/net10.0" \
+            "bin"
           do
-            copy_dll "$dll"
+            if [ -d "$candidate" ] && ls "$candidate"/OpenRA.Mods.Common.dll >/dev/null 2>&1; then
+              COMMON_OUT="$candidate"
+              break
+            fi
           done
 
-          # Fallback: search
-          if [ -z "$(ls -A "$ASSETS/assemblies"/*.dll 2>/dev/null || true)" ]; then
-            echo "Searching tree for OpenRA.Mods.*.dll ..."
-            find . -path ./OpenRA.AndroidLauncher -prune -o \
-              -name 'OpenRA.Mods.*.dll' -print 2>/dev/null | head -20 | while read -r f; do
+          if [ -n "$COMMON_OUT" ]; then
+            echo "Copying managed assemblies from $COMMON_OUT"
+            # All non-OpenRA.Game runtime DLLs (mods + nuget deps)
+            find "$COMMON_OUT" -maxdepth 1 -name '*.dll' -type f | while read -r f; do
+              base=$(basename "$f")
+              case "$base" in
+                OpenRA.Game.dll|OpenRA.Platforms.*.dll) continue ;;
+              esac
               copy_dll "$f"
             done
+          else
+            echo "WARNING: Mods.Common output dir not found; falling back to named search"
+            for dll in \
+              bin/OpenRA.Mods.Common.dll \
+              bin/OpenRA.Mods.Cnc.dll \
+              bin/OpenRA.Mods.D2k.dll \
+              "OpenRA.Mods.Common/bin/$CONFIG/net10.0/OpenRA.Mods.Common.dll" \
+              "OpenRA.Mods.Cnc/bin/$CONFIG/net10.0/OpenRA.Mods.Cnc.dll" \
+              "OpenRA.Mods.D2k/bin/$CONFIG/net10.0/OpenRA.Mods.D2k.dll"
+            do
+              copy_dll "$dll"
+            done
+            for dep in TagLibSharp.dll MP3Sharp.dll NVorbis.dll Pfim.dll \
+                       DiscordRPC.dll rix0rrr.BeaconLib.dll OpenRA-FuzzyLogicLibrary.dll \
+                       FuzzyLogicLibrary.dll BeaconLib.dll; do
+              found=$(find . -path ./OpenRA.AndroidLauncher -prune -o -name "$dep" -print 2>/dev/null | head -1 || true)
+              [ -n "$found" ] && copy_dll "$found"
+            done
           fi
+
+          # Also pull Cnc/D2k outputs if not already copied
+          for proj in OpenRA.Mods.Cnc OpenRA.Mods.D2k; do
+            for candidate in "$proj/bin/$CONFIG/net10.0" "$proj/bin/$CONFIG"; do
+              if [ -f "$candidate/$proj.dll" ] || [ -f "$candidate/OpenRA.Mods.Cnc.dll" ] || [ -f "$candidate/OpenRA.Mods.D2k.dll" ]; then
+                find "$candidate" -maxdepth 1 -name 'OpenRA.Mods.*.dll' -type f | while read -r f; do
+                  copy_dll "$f"
+                done
+              fi
+            done
+          done
 
           echo "android-port-dev" > "$ASSETS/VERSION"
 

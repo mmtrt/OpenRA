@@ -40,6 +40,11 @@ namespace OpenRA.Android
 			base.OnCreate(savedInstanceState);
 
 			RequestStorageIfNeeded();
+			if ((int)Build.VERSION.SdkInt >= 30 && !StorageAccess.HasAllFilesAccess())
+			{
+				// Optional: user can grant for /storage/emulated/0/OpenRA; app works without it
+				AndroidFileLog.Info("OpenRA.Main", "Android 11+ : app-external storage by default; all-files optional");
+			}
 			AndroidFileLog.Init();
 			AndroidFileLog.Info("OpenRA.Main", "OnCreate");
 
@@ -187,6 +192,7 @@ namespace OpenRA.Android
 							ToastLength.Long).Show();
 					}
 				})
+				.SetNeutralButton("All-files access", (s, e) => StorageAccess.RequestAllFilesAccess(this))
 				.SetNegativeButton("OK", (s, e) => { })
 				.Show();
 		}
