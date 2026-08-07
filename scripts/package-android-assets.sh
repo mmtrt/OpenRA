@@ -86,6 +86,8 @@ find_mod_out() {
   local proj="$1"
   local candidate
   for candidate in \
+    "$ROOT/bin-android" \
+    "$proj/bin-android" \
     "$proj/bin/$CONFIG/net10.0" \
     "$proj/bin/$CONFIG" \
     "bin/net10.0" \
@@ -100,10 +102,13 @@ find_mod_out() {
       fi
     fi
   done
-  # Fallback: any dir with Mods.Common
+  # Fallback: search bin-android specifically. Do NOT fall back to a bare "any dir with
+  # Mods.Common.dll" scan across $ROOT — that can silently pick up a desktop (net10.0)
+  # build sitting in bin/, which looks fine but is missing the #if ANDROID guards and
+  # will reproduce Android-specific crashes (e.g. DiscordService TypeLoadException) even
+  # though the source is patched correctly.
   local found
-  found=$(find "$ROOT" -path '*/OpenRA.AndroidLauncher/*' -prune -o \
-    -name 'OpenRA.Mods.Common.dll' -print 2>/dev/null | head -1 || true)
+  found=$(find "$ROOT/bin-android" -maxdepth 2 -name 'OpenRA.Mods.Common.dll' -print 2>/dev/null | head -1 || true)
   if [[ -n "$found" ]]; then
     dirname "$found"
     return 0
@@ -114,6 +119,13 @@ find_mod_out() {
 COMMON_OUT=""
 if COMMON_OUT=$(find_mod_out OpenRA.Mods.Common); then
   echo "Using assembly source: $COMMON_OUT"
+  case "$COMMON_OUT" in
+    "$ROOT/bin-android"*) ;;
+    *) echo "WARNING: assembly source is NOT bin-android/ ($COMMON_OUT)." \
+            "This is almost certainly a desktop (net10.0) build lacking the" \
+            "#if ANDROID guards — build with 'dotnet build -p:OpenRAAndroid=true'" \
+            "first so bin-android/ exists." ;;
+  esac
   while IFS= read -r f; do
     copy_dll "$f"
   done < <(find "$COMMON_OUT" -maxdepth 1 -name '*.dll' -type f | sort)
