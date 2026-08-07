@@ -135,10 +135,22 @@ namespace OpenRA.Platforms.Android
 
 		public void DisableScissor() => GLES20.GlDisable(GLES20.GlScissorTest);
 
+		static int presentCount;
+
 		public void Present()
 		{
-			AndroidEgl.MakeCurrent();
+			if (!AndroidEgl.MakeCurrent())
+			{
+				if (presentCount < 5)
+					ALog.Warn("OpenRA.GL", "Present: MakeCurrent failed: " + AndroidEgl.LastError);
+				return;
+			}
+
 			AndroidEgl.SwapBuffers();
+			presentCount++;
+			if (presentCount <= 5 || presentCount % 300 == 0)
+				ALog.Info("OpenRA.GL", "Present #" + presentCount
+					+ " surface=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
 		}
 
 		public void SetBlendMode(BlendMode mode)

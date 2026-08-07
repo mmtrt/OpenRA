@@ -45,6 +45,7 @@ namespace OpenRA.Android
 				CopyModsToBinDir();
 
 				AndroidNativeBootstrap.Init();
+				AndroidNativeBootstrap.AttachResolversToLoadedAssemblies();
 
 				Platform.AndroidFilesDir = SupportDir;
 				Platform.AndroidCacheDir = CacheDir;
@@ -229,12 +230,18 @@ namespace OpenRA.Android
 					"Game.Mod=" + mod,
 					"Engine.SupportDir=" + SupportDir,
 					"Engine.EngineDir=" + SupportDir,
-					"Engine.ModSearchPaths=" + ContentBootstrap.ModsDir
+					"Engine.ModSearchPaths=" + ContentBootstrap.ModsDir,
+					"Graphics.DisableHardwareCursors=True",
+					"Graphics.GLProfile=Embedded"
 				};
+
+				WriteAndroidSettings(SupportDir);
+				try { Game.HideCursor = true; } catch { /* older builds */ }
 
 				// Eluant may load here — ensure DllImportResolver is on every assembly in the default ALC.
 				AndroidNativeBootstrap.AttachResolversToLoadedAssemblies();
-				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun " + string.Join(" ", args));
+				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun " + string.Join(" ", args)
+					+ " surface=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
 				Game.InitializeAndRun(args);
 				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun returned");
 			}
@@ -246,6 +253,38 @@ namespace OpenRA.Android
 			{
 				IsRunning = false;
 				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread exit");
+			}
+		}
+
+
+		static void WriteAndroidSettings(string supportDir)
+		{
+			try
+			{
+				var path = Path.Combine(supportDir, "settings.yaml");
+				var w = Math.Max(1, AndroidEgl.SurfaceWidth);
+				var h = Math.Max(1, AndroidEgl.SurfaceHeight);
+				var nl = Environment.NewLine;
+				var tab = "	";
+				var yaml =
+					"Player:" + nl +
+					tab + "Name: Android Commander" + nl +
+					"Graphics:" + nl +
+					tab + "Mode: Windowed" + nl +
+					tab + "WindowedSize: " + w + "," + h + nl +
+					tab + "FullscreenSize: " + w + "," + h + nl +
+					tab + "DisableHardwareCursors: true" + nl +
+					tab + "GLProfile: Embedded" + nl +
+					tab + "VSync: true" + nl +
+					"Sound:" + nl +
+					tab + "Device: Null" + nl;
+				File.WriteAllText(path, yaml);
+				AndroidFileLog.Info("OpenRA.Bootstrap",
+					"Wrote settings.yaml " + w + "x" + h + " DisableHardwareCursors=true");
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "settings.yaml: " + e.Message);
 			}
 		}
 

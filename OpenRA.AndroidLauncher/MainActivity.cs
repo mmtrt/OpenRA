@@ -90,7 +90,7 @@ namespace OpenRA.Android
 					Gravity = GravityFlags.Center,
 					TextSize = 13f
 				};
-				statusOverlay.SetBackgroundColor(AColor.Argb(160, 0, 0, 0));
+				statusOverlay.SetBackgroundColor(AColor.Argb(0, 0, 0, 0)); // transparent — do not cover GL
 				statusOverlay.SetTextColor(AColor.White);
 				root.AddView(statusOverlay, new FrameLayout.LayoutParams(
 					ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
@@ -248,18 +248,42 @@ namespace OpenRA.Android
 
 			engineStartRequested = true;
 			bootstrapAttempted = true;
-			statusOverlay.Text = "Starting OpenRA…\n" + ContentBootstrap.SupportDir;
+			statusOverlay.Text = "Starting OpenRA...\n" + ContentBootstrap.SupportDir;
 			try
 			{
 				// Load native libs here (not OnCreate)
 				OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
 				OpenRA.Platforms.Android.AndroidEgl.ReleaseCurrent();
 				EngineBootstrap.Start(surfaceView, "ra");
+
+				// Engine owns the GL surface — drop the opaque status strip so it
+				// cannot cover rendered frames (was full-screen black with only text).
+				statusOverlay.PostDelayed(() =>
+				{
+					try
+					{
+						if (EngineBootstrap.IsRunning)
+						{
+							statusOverlay.Visibility = ViewStates.Gone;
+							AndroidFileLog.Info("OpenRA.Main", "Status overlay hidden — engine running");
+						}
+						else
+						{
+							statusOverlay.Text = "Engine exited — see openra.log";
+							statusOverlay.Visibility = ViewStates.Visible;
+						}
+					}
+					catch (Exception e)
+					{
+						AndroidFileLog.Warn("OpenRA.Main", "overlay: " + e.Message);
+					}
+				}, 3000);
 			}
 			catch (Exception ex)
 			{
 				engineStartRequested = false;
 				AndroidFileLog.Exception("OpenRA.Main", ex);
+				statusOverlay.Visibility = ViewStates.Visible;
 				statusOverlay.Text = "Engine start failed — see openra.log";
 			}
 		}

@@ -11,14 +11,14 @@ using OpenRA.Primitives;
 namespace OpenRA.Platforms.Android
 {
 	/// <summary>
-	/// Android IPlatformWindow — owns RW-style AndroidInput and stub GLES context.
+	/// Android IPlatformWindow — owns RW-style AndroidInput and GLES context.
+	/// Window size always tracks the real EGL surface (not desktop defaults).
 	/// </summary>
 	public sealed class AndroidPlatformWindow : IPlatformWindow
 	{
-		/// <summary>Last created window; MainActivity feeds touch here.</summary>
 		public static AndroidPlatformWindow Current { get; private set; }
 
-		readonly Size windowSize;
+		Size windowSize;
 		readonly float scaleModifier;
 		readonly GLProfile glProfile;
 		readonly AndroidInput input = new();
@@ -28,8 +28,15 @@ namespace OpenRA.Platforms.Android
 		public AndroidPlatformWindow(Size size, WindowMode windowMode, float scaleModifier,
 			int vertexBatchSize, int indexBatchSize, int videoDisplay, GLProfile profile)
 		{
-			windowSize = size;
-			this.scaleModifier = scaleModifier;
+			// Prefer live SurfaceView size so the GL viewport matches the phone display.
+			if (AndroidEgl.IsReady && AndroidEgl.SurfaceWidth > 0 && AndroidEgl.SurfaceHeight > 0)
+				windowSize = new Size(AndroidEgl.SurfaceWidth, AndroidEgl.SurfaceHeight);
+			else if (size.Width > 0 && size.Height > 0)
+				windowSize = size;
+			else
+				windowSize = new Size(1280, 720);
+
+			this.scaleModifier = scaleModifier <= 0 ? 1f : scaleModifier;
 			glProfile = profile;
 			Current = this;
 		}
@@ -39,8 +46,8 @@ namespace OpenRA.Platforms.Android
 
 		public Size NativeWindowSize => windowSize;
 		public Size EffectiveWindowSize => new(
-			(int)(windowSize.Width / scaleModifier),
-			(int)(windowSize.Height / scaleModifier));
+			Math.Max(1, (int)(windowSize.Width / scaleModifier)),
+			Math.Max(1, (int)(windowSize.Height / scaleModifier)));
 
 		public float NativeWindowScale => 1.0f;
 		public float EffectiveWindowScale => NativeWindowScale / scaleModifier;
@@ -58,8 +65,33 @@ namespace OpenRA.Platforms.Android
 
 		public void SetSuspended(bool value) => suspended = value;
 
+		/// <summary>Update size after SurfaceChanged (keeps Renderer viewport in sync).</summary>
+		public void SyncSurfaceSize()
+		{
+			if (!AndroidEgl.IsReady)
+				return;
+			var w = AndroidEgl.SurfaceWidth;
+			var h = AndroidEgl.SurfaceHeight;
+			if (w <= 0 || h <= 0)
+				return;
+			if (windowSize.Width == w && windowSize.Height == h)
+				return;
+			var old = windowSize;
+			windowSize = new Size(w, h);
+			try
+			{
+				OnWindowScaleChanged?.Invoke(
+					NativeWindowScale, NativeWindowScale,
+					old.Width / (float)Math.Max(1, old.Height),
+					w / (float)Math.Max(1, h));
+			}
+			catch { /* ignore */ }
+		}
+
 		public void PumpInput(IInputHandler inputHandler)
 		{
+			SyncSurfaceSize();
+
 			if (inputHandler != null)
 			{
 				foreach (var mi in input.PendingMouse)
