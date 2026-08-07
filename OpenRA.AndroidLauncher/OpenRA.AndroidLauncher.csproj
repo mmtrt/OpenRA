@@ -40,8 +40,6 @@
     <ItemGroup>
       <AndroidNativeLibrary Include="$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua51.so"
                            Condition="Exists('$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua51.so')" />
-      <AndroidNativeLibrary Include="$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua5.1.so"
-                           Condition="Exists('$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua5.1.so')" />
     </ItemGroup>
   </Target>
 
