@@ -146,11 +146,16 @@ namespace OpenRA.Platforms.Android
 				return;
 			}
 
+			// Ensure we present the default framebuffer at full surface size.
+			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
+			var w = Math.Max(1, AndroidEgl.SurfaceWidth);
+			var h = Math.Max(1, AndroidEgl.SurfaceHeight);
+			GLES20.GlViewport(0, 0, w, h);
+
 			AndroidEgl.SwapBuffers();
 			presentCount++;
 			if (presentCount <= 5 || presentCount % 300 == 0)
-				ALog.Info("OpenRA.GL", "Present #" + presentCount
-					+ " surface=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
+				ALog.Info("OpenRA.GL", "Present #" + presentCount + " surface=" + w + "x" + h);
 		}
 
 		public void SetBlendMode(BlendMode mode)
@@ -502,11 +507,13 @@ namespace OpenRA.Platforms.Android
 	sealed class AndroidShader : IShader
 	{
 		readonly int program;
+		readonly IShaderBindings bindings;
 		readonly Dictionary<string, int> uniformCache = new();
 		int textureUnit;
 
 		public AndroidShader(IShaderBindings bindings)
 		{
+			this.bindings = bindings;
 			var vs = Compile(GLES20.GlVertexShader, AdaptShader(bindings.VertexShaderCode, true));
 			var fs = Compile(GLES20.GlFragmentShader, AdaptShader(bindings.FragmentShaderCode, false));
 
@@ -524,24 +531,16 @@ namespace OpenRA.Platforms.Android
 			var linkStatus = new int[1];
 			GLES20.GlGetProgramiv(program, GLES20.GlLinkStatus, linkStatus, 0);
 			if (linkStatus[0] == 0)
-				ALog.Error("OpenRA.GL", "Shader link failed: " + GLES20.GlGetProgramInfoLog(program));
+			{
+				var log = GLES20.GlGetProgramInfoLog(program);
+				ALog.Error("OpenRA.GL", "Shader link failed: " + log);
+				throw new InvalidProgramException("Shader link failed: " + log);
+			}
 
 			GLES20.GlDeleteShader(vs);
 			GLES20.GlDeleteShader(fs);
 
-			if (bindings.Attributes != null)
-			{
-				GLES20.GlUseProgram(program);
-				foreach (var attr in bindings.Attributes)
-				{
-					var loc = GLES20.GlGetAttribLocation(program, attr.Name);
-					if (loc < 0)
-						continue;
-					GLES20.GlEnableVertexAttribArray(loc);
-					// Offset in bytes as integer — GLES20 binding accepts int for buffer offset when VBO is bound
-					GLES20.GlVertexAttribPointer(loc, attr.Components, GLES20.GlFloat, false, bindings.Stride, attr.Offset);
-				}
-			}
+			ALog.Info("OpenRA.GL", "Shader linked: " + bindings.VertexShaderName);
 		}
 
 		static string AdaptShader(string code, bool vertex)
@@ -549,23 +548,24 @@ namespace OpenRA.Platforms.Android
 			if (string.IsNullOrEmpty(code))
 				return code;
 
-			var sb = new StringBuilder();
+			// OpenRA glsl uses "#version {VERSION}" — Embedded needs "300 es".
+			code = code.Replace("{VERSION}", "300 es");
+			code = System.Text.RegularExpressions.Regex.Replace(
+				code, @"#version\s+\d+(\s+core)?", "#version 300 es");
+
 			if (!code.Contains("#version", StringComparison.Ordinal))
+				code = "#version 300 es" + Environment.NewLine + code;
+
+			if (!vertex && !code.Contains("precision ", StringComparison.Ordinal))
 			{
-				sb.AppendLine("#version 300 es");
-				if (!vertex)
-					sb.AppendLine("precision mediump float;");
-			}
-			else
-			{
-				code = System.Text.RegularExpressions.Regex.Replace(
-					code, @"#version\s+\d+(\s+core)?", "#version 300 es");
-				if (!vertex && !code.Contains("precision ", StringComparison.Ordinal))
-					sb.AppendLine("precision mediump float;");
+				var nl = code.IndexOf('\n');
+				if (nl >= 0)
+					code = code.Substring(0, nl + 1) + "precision mediump float;" + Environment.NewLine + code.Substring(nl + 1);
+				else
+					code = code + Environment.NewLine + "precision mediump float;" + Environment.NewLine;
 			}
 
-			sb.Append(code);
-			return sb.ToString();
+			return code;
 		}
 
 		static int Compile(int type, string source)
@@ -576,7 +576,13 @@ namespace OpenRA.Platforms.Android
 			var status = new int[1];
 			GLES20.GlGetShaderiv(shader, GLES20.GlCompileStatus, status, 0);
 			if (status[0] == 0)
-				ALog.Error("OpenRA.GL", "Shader compile failed: " + GLES20.GlGetShaderInfoLog(shader));
+			{
+				var log = GLES20.GlGetShaderInfoLog(shader);
+				ALog.Error("OpenRA.GL", "Shader compile failed: " + log);
+				var preview = source.Length > 300 ? source.Substring(0, 300) + "..." : source;
+				ALog.Error("OpenRA.GL", "Source preview:\n" + preview);
+				throw new InvalidProgramException("Shader compile failed: " + log);
+			}
 			return shader;
 		}
 
@@ -591,11 +597,27 @@ namespace OpenRA.Platforms.Android
 
 		public void Bind()
 		{
+			// Called with the vertex buffer already bound — set attrib pointers (desktop Shader.Bind).
+			if (bindings == null || bindings.Attributes == null)
+				return;
+			for (var i = 0; i < bindings.Attributes.Length; i++)
+			{
+				var attribute = bindings.Attributes[i];
+				GLES20.GlEnableVertexAttribArray(i);
+				if (attribute.Type == ShaderVertexAttributeType.Float)
+					GLES20.GlVertexAttribPointer(i, attribute.Components, GLES20.GlFloat, false,
+						bindings.Stride, attribute.Offset);
+				else
+					GLES30.GlVertexAttribIPointer(i, attribute.Components, (int)attribute.Type,
+						bindings.Stride, attribute.Offset);
+			}
+		}
+
+		public void PrepareRender()
+		{
 			GLES20.GlUseProgram(program);
 			textureUnit = 0;
 		}
-
-		public void PrepareRender() => Bind();
 
 		public void SetBool(string name, bool value)
 		{
