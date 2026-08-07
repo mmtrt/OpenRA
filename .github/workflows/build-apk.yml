@@ -415,7 +415,9 @@ jobs:
           ASSETS="OpenRA.AndroidLauncher/Assets"
           test -f "$ASSETS/mods/ra/rules/vehicles.yaml"
           test -f "$ASSETS/mods/ra/rules/defaults.yaml"
-          test -f "$ASSETS/mods/common/mod.yaml"
+          # mods/common is a shared package (no mod.yaml on bleed) — require dir + font
+          test -d "$ASSETS/mods/common"
+          test -f "$ASSETS/mods/common/FreeSans.ttf" || test -f "$ASSETS/mods/common/FreeSansBold.ttf"
           test -f "$ASSETS/assemblies/OpenRA.Mods.Common.dll"
           test -f "$ASSETS/assemblies/OpenRA.Mods.Cnc.dll"
           echo "Workflow packaging OK"
