@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using OpenRA.Primitives;
 
 namespace OpenRA
@@ -51,13 +52,15 @@ namespace OpenRA
 			// We can't check the internal name of the assembly, so we'll work off the data instead
 			string hash;
 			using (var stream = File.OpenRead(resolvedPath))
-				hash = CryptoUtil.SHA1Hash(stream);
+			hash = CryptoUtil.SHA1Hash(stream);
 
 			if (!ResolvedAssemblies.TryGetValue(hash, out var assembly))
 			{
-				var loader = new Support.AssemblyLoader(resolvedPath);
-				assembly = loader.LoadDefaultAssembly();
-				ResolvedAssemblies.Add(hash, assembly);
+				// IMPORTANT: Use the default ALC so all mod TraitInfo types share
+				// a single Type identity (required for TypeDictionary / HasTraitInfo).
+				// Isolated AssemblyLoadContext per DLL breaks Chronoshiftable etc.
+				assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(resolvedPath);
+				ResolvedAssemblies[hash] = assembly;
 			}
 
 			assemblyList.Add(assembly);

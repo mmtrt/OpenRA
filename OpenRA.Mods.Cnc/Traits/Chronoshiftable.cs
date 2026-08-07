@@ -38,7 +38,22 @@ namespace OpenRA.Mods.Cnc.Traits
 
 		public override void RulesetLoaded(Ruleset rules, ActorInfo ai)
 		{
-			if (!ai.HasTraitInfo<MobileInfo>() && !ai.HasTraitInfo<HuskInfo>())
+			// Typed lookup first; name fallback for isolated AssemblyLoadContext (Android).
+			var ok = ai.HasTraitInfo<MobileInfo>() || ai.HasTraitInfo<HuskInfo>();
+			if (!ok)
+			{
+				foreach (var t in ai.TraitInfos<ITraitInfoInterface>())
+				{
+					var n = t.GetType().Name;
+					if (n == "MobileInfo" || n == "HuskInfo")
+					{
+						ok = true;
+						break;
+					}
+				}
+			}
+
+			if (!ok)
 				throw new YamlException("Chronoshiftable requires actors to have the Mobile or Husk traits.");
 		}
 
