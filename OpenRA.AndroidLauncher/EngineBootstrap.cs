@@ -160,7 +160,6 @@ namespace OpenRA.Android
 				"Linguini.Shared.dll",
 				"Linguini.Syntax.dll",
 				"BeaconLib.dll",
-				"DiscordRPC.dll",
 				"FuzzyLogicLibrary.dll",
 				"MP3Sharp.dll",
 				"Mono.Nat.dll",
