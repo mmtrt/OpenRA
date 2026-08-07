@@ -41,7 +41,6 @@ namespace OpenRA.Android
 					{
 						Directory.CreateDirectory(dir);
 						OpenWriter(Path.Combine(dir, MainLogName));
-						OpenWriter(Path.Combine(dir, ErrorLogName));
 						if (primaryDir == null)
 							primaryDir = dir;
 						ALog.Info("OpenRA.Log", "Logging directory: " + dir);

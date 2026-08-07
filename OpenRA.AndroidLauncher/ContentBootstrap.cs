@@ -1,4 +1,4 @@
-// Extract APK assets → /storage/emulated/0/OpenRA/ (mods, glsl, Content, assemblies).
+// Extract APK assets → SupportDir; place mod DLLs where ObjectCreator can open them.
 
 using System;
 using System.IO;
@@ -9,7 +9,6 @@ namespace OpenRA.Android
 {
 	public static class ContentBootstrap
 	{
-		/// <summary>Public tree that survives app uninstall (user requested).</summary>
 		public static string PublicRoot => "/storage/emulated/0/OpenRA";
 
 		public static string SupportDir { get; private set; }
@@ -17,6 +16,8 @@ namespace OpenRA.Android
 		public static string ContentDir => Path.Combine(SupportDir, "Content");
 		public static string GlslDir => Path.Combine(SupportDir, "glsl");
 		public static string AssembliesDir => Path.Combine(SupportDir, "assemblies");
+
+		static bool publicPathWarned;
 
 		public static void EnsureLayout(string preferredSupportDir = null)
 		{
@@ -33,35 +34,38 @@ namespace OpenRA.Android
 
 			AndroidFileLog.Info("OpenRA.Content", "SupportDir=" + SupportDir);
 
-			// Order: assemblies first (mod loader), then mods YAML/bits, glsl, content
 			ExtractAssetsFolder("assemblies", AssembliesDir);
 			ExtractAssetsFolder("mods", ModsDir);
 			ExtractAssetsFolder("glsl", GlslDir);
 			ExtractAssetsFolder("Content", ContentDir);
 
-			// Place mod DLLs where FileSystem/mod loader expects them (mod folder and/or assemblies)
-			MirrorAssembliesIntoMods();
-
+			PlaceAssembliesForLoader();
 			LogTree();
 		}
 
 		static string ResolveSupportDir()
 		{
-			// Prefer public /storage/emulated/0/OpenRA as requested
+			// Prefer public path only if already writable (don't spam errors)
 			try
 			{
-				Directory.CreateDirectory(PublicRoot);
-				var probe = Path.Combine(PublicRoot, ".write_test");
-				File.WriteAllText(probe, "ok");
-				File.Delete(probe);
-				return PublicRoot;
+				if (Directory.Exists(PublicRoot) || TryCreate(PublicRoot))
+				{
+					var probe = Path.Combine(PublicRoot, ".write_test");
+					File.WriteAllText(probe, "ok");
+					File.Delete(probe);
+					return PublicRoot;
+				}
 			}
 			catch (Exception e)
 			{
-				AndroidFileLog.Warn("OpenRA.Content", "Public OpenRA path not writable: " + e.Message);
+				if (!publicPathWarned)
+				{
+					publicPathWarned = true;
+					AndroidFileLog.Info("OpenRA.Content",
+						"Using app storage (public /storage/emulated/0/OpenRA not writable). " + e.Message);
+				}
 			}
 
-			// Fallback: app external (always writable, cleared on uninstall)
 			try
 			{
 				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
@@ -73,34 +77,87 @@ namespace OpenRA.Android
 			return Path.Combine(Application.Context.FilesDir.AbsolutePath, "OpenRA");
 		}
 
-		static void MirrorAssembliesIntoMods()
+		static bool TryCreate(string path)
+		{
+			try
+			{
+				Directory.CreateDirectory(path);
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
+		/// <summary>
+		/// ObjectCreator uses File.OpenRead on bare assembly names; resolution ends up under
+		/// internal FilesDir (see device log: /data/user/0/.../files/OpenRA.Mods.Common.dll).
+		/// Also place copies under SupportDir root and each mod folder.
+		/// </summary>
+		public static void PlaceAssembliesForLoader()
 		{
 			if (!Directory.Exists(AssembliesDir))
 				return;
 
+			string[] targets =
+			{
+				SupportDir,
+				Application.Context.FilesDir?.AbsolutePath,
+				Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? "", "OpenRA"),
+			};
+
 			foreach (var dll in Directory.GetFiles(AssembliesDir, "*.dll"))
 			{
 				var name = Path.GetFileName(dll);
-				// OpenRA often resolves assemblies next to mod packages
+
+				foreach (var dir in targets)
+				{
+					if (string.IsNullOrEmpty(dir))
+						continue;
+					try
+					{
+						Directory.CreateDirectory(dir);
+						var dest = Path.Combine(dir, name);
+						if (!SameFile(dll, dest))
+						{
+							File.Copy(dll, dest, overwrite: true);
+							AndroidFileLog.Info("OpenRA.Content", "Assembly → " + dest);
+						}
+					}
+					catch (Exception e)
+					{
+						AndroidFileLog.Warn("OpenRA.Content", "Assembly copy " + name + " → " + dir + ": " + e.Message);
+					}
+				}
+
 				foreach (var modId in new[] { "common", "ra", "cnc", "d2k" })
 				{
 					var modDir = Path.Combine(ModsDir, modId);
 					if (!Directory.Exists(modDir))
 						continue;
-					var dest = Path.Combine(modDir, name);
 					try
 					{
-						if (!File.Exists(dest) || new FileInfo(dest).Length != new FileInfo(dll).Length)
-						{
+						var dest = Path.Combine(modDir, name);
+						if (!SameFile(dll, dest))
 							File.Copy(dll, dest, overwrite: true);
-							AndroidFileLog.Info("OpenRA.Content", "Mirrored " + name + " -> mods/" + modId);
-						}
 					}
-					catch (Exception e)
-					{
-						AndroidFileLog.Warn("OpenRA.Content", "Mirror " + name + ": " + e.Message);
-					}
+					catch { /* ignore */ }
 				}
+			}
+		}
+
+		static bool SameFile(string a, string b)
+		{
+			try
+			{
+				if (!File.Exists(b))
+					return false;
+				return new FileInfo(a).Length == new FileInfo(b).Length;
+			}
+			catch
+			{
+				return false;
 			}
 		}
 
@@ -108,21 +165,13 @@ namespace OpenRA.Android
 		{
 			foreach (var d in Directory.Exists(ModsDir) ? Directory.GetDirectories(ModsDir) : Array.Empty<string>())
 			{
-				AndroidFileLog.Info("OpenRA.Content", "mod dir: " + d);
-				var yaml = Path.Combine(d, "mod.yaml");
-				if (File.Exists(yaml))
-					AndroidFileLog.Info("OpenRA.Content", "  has mod.yaml");
+				if (File.Exists(Path.Combine(d, "mod.yaml")))
+					AndroidFileLog.Info("OpenRA.Content", "mod ok: " + Path.GetFileName(d));
 			}
 
 			if (Directory.Exists(AssembliesDir))
 				foreach (var f in Directory.GetFiles(AssembliesDir, "*.dll"))
-					AndroidFileLog.Info("OpenRA.Content", "assembly: " + Path.GetFileName(f));
-
-			if (Directory.Exists(GlslDir))
-			{
-				var n = Directory.GetFiles(GlslDir, "*", SearchOption.AllDirectories).Length;
-				AndroidFileLog.Info("OpenRA.Content", "glsl files: " + n);
-			}
+					AndroidFileLog.Info("OpenRA.Content", "assembly packaged: " + Path.GetFileName(f));
 		}
 
 		public static void ExtractAssetsFolder(string assetFolder, string destDir)
@@ -175,11 +224,10 @@ namespace OpenRA.Android
 				using var input = assets.Open(assetPath);
 				using var output = File.Create(destPath);
 				input.CopyTo(output);
-				AndroidFileLog.Info("OpenRA.Content", "Extracted " + assetPath);
 			}
-			catch (Exception e)
+			catch
 			{
-				AndroidFileLog.Warn("OpenRA.Content", "Skip " + assetPath + ": " + e.Message);
+				// missing asset leaf — expected
 			}
 		}
 

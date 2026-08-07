@@ -1,4 +1,4 @@
-// Bootstrap — public SupportDir, content extract, PlatformFactory, safe engine start.
+// Bootstrap — SupportDir, assemblies on disk, PlatformFactory, engine start.
 
 using System;
 using System.IO;
@@ -28,11 +28,13 @@ namespace OpenRA.Android
 				AndroidFileLog.Init();
 				AndroidFileLog.Info("OpenRA.Bootstrap", $"Start attempt={++startAttempts} mod={mod}");
 
-				// Prefer /storage/emulated/0/OpenRA (survives uninstall)
 				ContentBootstrap.EnsureLayout(null);
 				SupportDir = ContentBootstrap.SupportDir;
 				CacheDir = Path.Combine(SupportDir, "Cache");
 				Directory.CreateDirectory(CacheDir);
+
+				// Ensure DLLs exist where ObjectCreator File.OpenRead looks
+				ContentBootstrap.PlaceAssembliesForLoader();
 
 				AndroidNativeBootstrap.Init();
 
@@ -42,10 +44,7 @@ namespace OpenRA.Android
 
 				if (!ContentBootstrap.HasAnyMod())
 				{
-					AndroidFileLog.Warn("OpenRA.Bootstrap",
-						"No mod.yaml under mods/. Build with package-android-assets.sh or adb push mods.");
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "Skipping InitializeAndRun until mods are present.");
-					IsRunning = false;
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "No mod.yaml under mods/ — not starting engine.");
 					return;
 				}
 
@@ -69,15 +68,27 @@ namespace OpenRA.Android
 			try
 			{
 				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread enter");
+
+				// Critical: assembly names resolve relative to cwd / FilesDir
+				try
+				{
+					Directory.SetCurrentDirectory(SupportDir);
+					AndroidFileLog.Info("OpenRA.Bootstrap", "cwd=" + Directory.GetCurrentDirectory());
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "SetCurrentDirectory: " + e.Message);
+				}
+
+				ContentBootstrap.PlaceAssembliesForLoader();
+
 				if (!AndroidEgl.MakeCurrent())
 					AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent failed: " + AndroidEgl.LastError);
 
-				var engineDir = SupportDir;
-				var versionPath = Path.Combine(engineDir, "VERSION");
+				var versionPath = Path.Combine(SupportDir, "VERSION");
 				if (!File.Exists(versionPath))
 					File.WriteAllText(versionPath, "android-port-dev");
 
-				// Log channel files under SupportDir/Logs (engine-native path)
 				Directory.CreateDirectory(Path.Combine(SupportDir, "Logs"));
 
 				var args = new[]
@@ -85,7 +96,7 @@ namespace OpenRA.Android
 					"Engine.Platform=Android",
 					"Game.Mod=" + mod,
 					"Engine.SupportDir=" + SupportDir,
-					"Engine.EngineDir=" + engineDir,
+					"Engine.EngineDir=" + SupportDir,
 					"Engine.ModSearchPaths=" + ContentBootstrap.ModsDir
 				};
 
