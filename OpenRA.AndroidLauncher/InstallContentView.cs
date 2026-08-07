@@ -1,4 +1,4 @@
-// Native Install Content UI — styled after official OpenRA chrome dialog.
+// Native Install Content UI — official-style panel + faction/loadscreen background.
 
 using System;
 using Android.Content;
@@ -27,12 +27,32 @@ namespace OpenRA.Android
 
 		public InstallContentView(Context context) : base(context)
 		{
-			// Faction watermark background (dark, like official)
-			SetBackgroundColor(AColor.Rgb(0x12, 0x12, 0x14));
+			SetBackgroundColor(AColor.Rgb(0x0c, 0x0c, 0x10));
+
+			// Background: official RA loadscreen / artwork if packaged
+			var bg = new ImageView(context);
+			bg.SetScaleType(ImageView.ScaleType.CenterCrop);
+			try
+			{
+				var id = context.Resources.GetIdentifier("install_bg", "drawable", context.PackageName);
+				if (id != 0)
+					bg.SetImageResource(id);
+				else
+				{
+					id = context.Resources.GetIdentifier("ra_icon", "drawable", context.PackageName);
+					if (id != 0)
+						bg.SetImageResource(id);
+				}
+			}
+			catch { /* ignore */ }
+
+			bg.SetColorFilter(new PorterDuffColorFilter(AColor.Argb(180, 0x10, 0x10, 0x18), PorterDuff.Mode.SrcAtop));
+			AddView(bg, new FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
 			var card = new LinearLayout(context) { Orientation = Orientation.Vertical };
 			var cardBg = new GradientDrawable();
-			cardBg.SetColor(AColor.Argb(230, 0x1a, 0x1c, 0x14));
+			cardBg.SetColor(AColor.Argb(235, 0x1a, 0x1c, 0x14));
 			cardBg.SetStroke(Dp(2), AColor.Rgb(0x90, 0x28, 0x18));
 			cardBg.SetCornerRadius(Dp(4));
 			card.Background = cardBg;
@@ -141,7 +161,6 @@ namespace OpenRA.Android
 				status.Visibility = ViewStates.Visible;
 				status.Text = message;
 			}
-
 			progress.Visibility = busy ? ViewStates.Visible : ViewStates.Gone;
 		}
 

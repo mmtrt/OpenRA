@@ -44,6 +44,8 @@ namespace OpenRA.Android
 				ExtractAssetsFolder("mods", ModsDir);
 				ExtractAssetsFolder("glsl", GlslDir);
 				ExtractAssetsFolder("Content", ContentDir);
+				// MIX filename hash database (silences debug.log unknown-hash warnings)
+				TryExtractRootFile("global mix database.dat", Path.Combine(SupportDir, "global mix database.dat"));
 				try { File.WriteAllText(marker, DateTime.UtcNow.ToString("o")); }
 				catch { /* ignore */ }
 			}
@@ -104,6 +106,26 @@ namespace OpenRA.Android
 				Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
 				if (!File.Exists(dest) || new FileInfo(dest).Length == 0)
 					File.Copy(file, dest, overwrite: true);
+			}
+		}
+
+
+		static void TryExtractRootFile(string assetName, string destPath)
+		{
+			try
+			{
+				if (File.Exists(destPath) && new FileInfo(destPath).Length > 0)
+					return;
+				var assets = Application.Context.Assets;
+				if (assets == null) return;
+				using var input = assets.Open(assetName);
+				using var output = File.Create(destPath);
+				input.CopyTo(output);
+				AndroidFileLog.Info("OpenRA.Content", "Extracted " + assetName);
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Content", assetName + ": " + e.Message);
 			}
 		}
 

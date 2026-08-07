@@ -23,6 +23,8 @@ namespace OpenRA.Platforms.Android
 			loaded = true;
 
 			NativeLibrary.SetDllImportResolver(typeof(AndroidNativeBootstrap).Assembly, Resolve);
+			// FreeType DllImport lives on this assembly (AndroidFreeTypeFont)
+			NativeLibrary.SetDllImportResolver(typeof(AndroidFreeTypeFont).Assembly, Resolve);
 			try
 			{
 				var gameAsm = Assembly.Load("OpenRA.Game");

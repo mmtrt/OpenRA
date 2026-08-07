@@ -648,19 +648,5 @@ namespace OpenRA.Platforms.Android
 		}
 	}
 
-	sealed class AndroidStubFont : IFont
-	{
-		public FontGlyph CreateGlyph(char c, int size, float deviceScale)
-		{
-			return new FontGlyph
-			{
-				Offset = int2.Zero,
-				Size = new Size(Math.Max(1, size / 2), Math.Max(1, size)),
-				Advance = size * 0.5f,
-				Data = Array.Empty<byte>()
-			};
-		}
 
-		public void Dispose() { }
-	}
 }

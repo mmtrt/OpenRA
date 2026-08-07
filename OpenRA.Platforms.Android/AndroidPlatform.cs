@@ -5,7 +5,9 @@
  */
 #endregion
 
+using System;
 using OpenRA.Primitives;
+using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
 {
@@ -30,8 +32,33 @@ namespace OpenRA.Platforms.Android
 
 		public IFont CreateFont(byte[] data)
 		{
-			// Stub glyphs until FreeType is wired
-			return new AndroidStubFont();
+			try
+			{
+				return new AndroidFreeTypeFont(data);
+			}
+			catch (Exception e)
+			{
+				ALog.Error("OpenRA.Font", "FreeType font failed: " + e);
+				// Safe empty glyphs (Data=null) so SpriteFont skips blit
+				return new AndroidSafeEmptyFont();
+			}
 		}
+	}
+
+	/// <summary>Fallback that never returns non-null empty Data with positive Size.</summary>
+	sealed class AndroidSafeEmptyFont : IFont
+	{
+		public FontGlyph CreateGlyph(char c, int size, float deviceScale)
+		{
+			return new FontGlyph
+			{
+				Offset = int2.Zero,
+				Size = new Size(0, 0),
+				Advance = size * 0.5f * deviceScale,
+				Data = null
+			};
+		}
+
+		public void Dispose() { }
 	}
 }
