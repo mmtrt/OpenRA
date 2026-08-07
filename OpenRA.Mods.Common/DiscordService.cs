@@ -1,4 +1,4 @@
-﻿#region Copyright & License Information
+#region Copyright & License Information
 /*
  * Copyright (c) The OpenRA Developers and Contributors
  * This file is part of OpenRA, which is free software. It is made
@@ -10,9 +10,11 @@
 #endregion
 
 using System;
+#if !ANDROID
 using DiscordRPC;
 using DiscordRPC.Message;
 using OpenRA.Network;
+#endif
 
 namespace OpenRA.Mods.Common
 {
@@ -29,6 +31,35 @@ namespace OpenRA.Mods.Common
 		PlayingSkirmish
 	}
 
+#if ANDROID
+	// Discord Rich Presence is not available on Android: there is no desktop Discord
+	// client to talk to, and the DiscordRichPresence NuGet package (netstandard2.0)
+	// pulls in a dependency on System.Diagnostics.Process for its named-pipe/IPC
+	// handshake. .NET for Android's Mono runtime cannot resolve System.Diagnostics.Process
+	// at all (process spawning is unsupported in the Android app sandbox), so merely
+	// constructing DiscordRpcClient throws a TypeLoadException while resolving its field
+	// layout. Rather than touching that type at all on this platform, DiscordService is
+	// a no-op stub here — none of the DiscordRPC types are referenced, so the assembly
+	// never needs to load them.
+	public sealed class DiscordService : IGlobalModData, IDisposable
+	{
+		public readonly string ApplicationId = null;
+		public readonly string Tooltip = "Open Source real-time strategy game engine for early Westwood titles.";
+
+		public DiscordService(MiniYaml yaml)
+		{
+			FieldLoader.Load(this, yaml);
+		}
+
+		public void Dispose() { }
+
+		public static void UpdateStatus(DiscordState state, string details = null, string secret = null, int? players = null, int? slots = null) { }
+
+		public static void UpdatePlayers(int players, int slots) { }
+
+		public static void UpdateDetails(string details) { }
+	}
+#else
 	public sealed class DiscordService : IGlobalModData, IDisposable
 	{
 		public readonly string ApplicationId = null;
@@ -235,4 +266,5 @@ namespace OpenRA.Mods.Common
 			Service?.SetDetails(details);
 		}
 	}
+#endif
 }
