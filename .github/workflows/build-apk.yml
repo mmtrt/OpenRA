@@ -376,20 +376,25 @@ jobs:
             /p:OpenRAAndroid=true \
             --verbosity minimal
 
-      - name: Build mod assemblies (desktop TFM)
+      - name: Build mod assemblies (Android TFM)
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
           set -euo pipefail
-          # Mod DLLs are managed assemblies; build net10.0 (not android) for packaging into Assets
+          # Mod DLLs must be built for net10.0-android (OpenRAAndroid=true), NOT the
+          # desktop net10.0 TFM. Building them desktop-side skips the ANDROID compile
+          # constant entirely, so any #if ANDROID guard (e.g. DiscordService's Android
+          # stub, which avoids a TypeLoadException from DiscordRichPresence's
+          # System.Diagnostics.Process dependency) never takes effect — the desktop code
+          # path gets bundled into the APK and crashes at runtime even when the source
+          # is patched correctly. This previously caused exactly that: a "fixed"
+          # DiscordService still throwing System.TypeLoadException on device.
           for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc; do
             if [ -f "$proj/$proj.csproj" ]; then
-              echo "=== Building $proj ($CONFIG) ==="
-              # OpenRAAndroid=false so Directory.Build.props keeps net10.0 (not android)
+              echo "=== Building $proj ($CONFIG, net10.0-android) ==="
               dotnet build "$proj/$proj.csproj" \
                 -c "$CONFIG" \
-                -f net10.0 \
-                /p:OpenRAAndroid=false \
+                /p:OpenRAAndroid=true \
                 /p:CopyLocalLockFileAssemblies=true \
                 --verbosity minimal
             else
