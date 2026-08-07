@@ -111,20 +111,29 @@ namespace OpenRA.Android
 				? Directory.GetFiles(AssembliesDir, "*.dll")
 				: Array.Empty<string>();
 
-			// ObjectCreator loads from Platform.BinDir (= AppDomain.BaseDirectory).
-			// Also keep copies under SupportDir for file probes / tooling.
-			var targets = new System.Collections.Generic.List<string> { SupportDir };
+			// ObjectCreator loads from Platform.BinDir (= AppDomain.BaseDirectory), which is
+			// the app's private internal storage under /data. SupportDir lives under
+			// /storage/emulated/0/Android/data/... (external app-private storage) and is
+			// never read by the assembly loader, so copying DLLs there is pure waste — it
+			// doubles extraction time/IO and, on some OEM skins, external storage write
+			// permission can lag behind app start, which used to make this step silently
+			// half-fail. Only place assemblies under the /data BaseDirectory.
+			var targets = new System.Collections.Generic.List<string>();
 			try
 			{
 				var bin = AppDomain.CurrentDomain.BaseDirectory;
 				if (!string.IsNullOrEmpty(bin))
 				{
 					var trimmed = bin.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
-					if (!string.Equals(trimmed, SupportDir, StringComparison.Ordinal))
-						targets.Add(trimmed);
+					targets.Add(trimmed);
 				}
 			}
 			catch { /* ignore */ }
+
+			// Fallback: if BaseDirectory could not be resolved for some reason, we still
+			// need the DLLs to land somewhere loadable, so fall back to SupportDir.
+			if (targets.Count == 0)
+				targets.Add(SupportDir);
 
 			foreach (var dll in sources)
 			{
