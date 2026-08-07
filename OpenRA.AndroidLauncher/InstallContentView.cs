@@ -1,4 +1,4 @@
-// Native Install Content UI — official-style panel + faction/loadscreen background.
+// Native Install Content UI — official-style dialog + faction watermark background.
 
 using System;
 using Android.Content;
@@ -13,8 +13,6 @@ namespace OpenRA.Android
 {
 	public sealed class InstallContentView : FrameLayout
 	{
-		readonly TextView title;
-		readonly TextView body;
 		readonly TextView status;
 		readonly ProgressBar progress;
 		readonly Button advanced;
@@ -27,38 +25,20 @@ namespace OpenRA.Android
 
 		public InstallContentView(Context context) : base(context)
 		{
-			SetBackgroundColor(AColor.Rgb(0x0c, 0x0c, 0x10));
-
-			// Background: official RA loadscreen / artwork if packaged
-			var bg = new ImageView(context);
-			bg.SetScaleType(ImageView.ScaleType.CenterCrop);
-			try
-			{
-				var id = context.Resources.GetIdentifier("install_bg", "drawable", context.PackageName);
-				if (id != 0)
-					bg.SetImageResource(id);
-				else
-				{
-					id = context.Resources.GetIdentifier("ra_icon", "drawable", context.PackageName);
-					if (id != 0)
-						bg.SetImageResource(id);
-				}
-			}
-			catch { /* ignore */ }
-
-			bg.SetColorFilter(new PorterDuffColorFilter(AColor.Argb(180, 0x10, 0x10, 0x18), PorterDuff.Mode.SrcAtop));
-			AddView(bg, new FrameLayout.LayoutParams(
+			// Official-style dark field with repeated faction icons (canvas-drawn)
+			var watermark = new FactionWatermarkView(context);
+			AddView(watermark, new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
 			var card = new LinearLayout(context) { Orientation = Orientation.Vertical };
 			var cardBg = new GradientDrawable();
-			cardBg.SetColor(AColor.Argb(235, 0x1a, 0x1c, 0x14));
+			cardBg.SetColor(AColor.Argb(220, 0x1a, 0x1c, 0x14));
 			cardBg.SetStroke(Dp(2), AColor.Rgb(0x90, 0x28, 0x18));
 			cardBg.SetCornerRadius(Dp(4));
 			card.Background = cardBg;
 			card.SetPadding(Dp(22), Dp(18), Dp(22), Dp(16));
 
-			title = new TextView(context)
+			var title = new TextView(context)
 			{
 				Text = "Install Content",
 				TextSize = 18f,
@@ -73,7 +53,7 @@ namespace OpenRA.Android
 			divLp.TopMargin = Dp(10);
 			divLp.BottomMargin = Dp(12);
 
-			body = new TextView(context)
+			var body = new TextView(context)
 			{
 				Text =
 					"Red Alert requires artwork and audio from the original game.\n\n" +
@@ -94,11 +74,7 @@ namespace OpenRA.Android
 			status.SetTextColor(AColor.Rgb(0xa0, 0xb0, 0x80));
 			status.Visibility = ViewStates.Gone;
 
-			progress = new ProgressBar(context)
-			{
-				Indeterminate = true,
-				Max = 1000
-			};
+			progress = new ProgressBar(context) { Indeterminate = true, Max = 1000 };
 			progress.Visibility = ViewStates.Gone;
 
 			var buttons = new LinearLayout(context) { Orientation = Orientation.Horizontal };
@@ -125,14 +101,13 @@ namespace OpenRA.Android
 			card.AddView(progress, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(8) });
 			card.AddView(buttons, MatchWrap());
 
-			var cardLp = new FrameLayout.LayoutParams(
+			AddView(card, new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
 			{
 				Gravity = GravityFlags.Center,
 				LeftMargin = Dp(28),
 				RightMargin = Dp(28)
-			};
-			AddView(card, cardLp);
+			});
 		}
 
 		static LinearLayout.LayoutParams MatchWrap() =>
@@ -176,5 +151,125 @@ namespace OpenRA.Android
 
 		int Dp(int value) =>
 			(int)TypedValue.ApplyDimension(ComplexUnitType.Dip, value, Resources.DisplayMetrics);
+	}
+
+	/// <summary>
+	/// Dark field with a grid of simplified RA faction marks (star / eagle / sickle) —
+	/// approximates the official Content Install chrome background.
+	/// </summary>
+	sealed class FactionWatermarkView : View
+	{
+		readonly Paint paint = new() { AntiAlias = true };
+		readonly AColor[] colors =
+		{
+			AColor.Rgb(0x40, 0x28, 0x18), // brown
+			AColor.Rgb(0x28, 0x30, 0x50), // blue
+			AColor.Rgb(0x50, 0x20, 0x20), // red
+			AColor.Rgb(0x38, 0x38, 0x20), // olive
+			AColor.Rgb(0x20, 0x40, 0x48), // teal
+		};
+
+		public FactionWatermarkView(Context context) : base(context)
+		{
+			SetBackgroundColor(AColor.Rgb(0x0e, 0x0e, 0x12));
+		}
+
+		protected override void OnDraw(Canvas canvas)
+		{
+			base.OnDraw(canvas);
+			var w = Width;
+			var h = Height;
+			if (w <= 0 || h <= 0)
+				return;
+
+			var cell = Math.Max(Dp(72), Math.Min(w, h) / 6);
+			var idx = 0;
+			for (var y = cell / 2; y < h + cell; y += cell)
+			{
+				for (var x = cell / 2; x < w + cell; x += cell)
+				{
+					paint.Color = colors[idx++ % colors.Length];
+					paint.Alpha = 90;
+					paint.SetStyle(Paint.Style.Stroke);
+					paint.StrokeWidth = Math.Max(2f, cell / 28f);
+					var kind = idx % 5;
+					var r = cell * 0.28f;
+					switch (kind)
+					{
+						case 0: // star (allied/soviet mark)
+							DrawStar(canvas, x, y, r);
+							break;
+						case 1: // hex
+							DrawHex(canvas, x, y, r);
+							break;
+						case 2: // triangle
+							DrawTriangle(canvas, x, y, r);
+							break;
+						case 3: // diamond
+							DrawDiamond(canvas, x, y, r);
+							break;
+						default: // circle
+							canvas.DrawCircle(x, y, r * 0.85f, paint);
+							break;
+					}
+				}
+			}
+		}
+
+		void DrawStar(Canvas c, float cx, float cy, float r)
+		{
+			var path = new Path();
+			for (var i = 0; i < 5; i++)
+			{
+				var a = (float)(-Math.PI / 2 + i * 2 * Math.PI / 5);
+				var x = cx + r * (float)Math.Cos(a);
+				var y = cy + r * (float)Math.Sin(a);
+				if (i == 0) path.MoveTo(x, y); else path.LineTo(x, y);
+				var a2 = a + (float)(Math.PI / 5);
+				var x2 = cx + r * 0.4f * (float)Math.Cos(a2);
+				var y2 = cy + r * 0.4f * (float)Math.Sin(a2);
+				path.LineTo(x2, y2);
+			}
+			path.Close();
+			c.DrawPath(path, paint);
+		}
+
+		void DrawHex(Canvas c, float cx, float cy, float r)
+		{
+			var path = new Path();
+			for (var i = 0; i < 6; i++)
+			{
+				var a = (float)(i * Math.PI / 3);
+				var x = cx + r * (float)Math.Cos(a);
+				var y = cy + r * (float)Math.Sin(a);
+				if (i == 0) path.MoveTo(x, y); else path.LineTo(x, y);
+			}
+			path.Close();
+			c.DrawPath(path, paint);
+		}
+
+		void DrawTriangle(Canvas c, float cx, float cy, float r)
+		{
+			var path = new Path();
+			path.MoveTo(cx, cy - r);
+			path.LineTo(cx + r * 0.9f, cy + r * 0.6f);
+			path.LineTo(cx - r * 0.9f, cy + r * 0.6f);
+			path.Close();
+			c.DrawPath(path, paint);
+		}
+
+		void DrawDiamond(Canvas c, float cx, float cy, float r)
+		{
+			var path = new Path();
+			path.MoveTo(cx, cy - r);
+			path.LineTo(cx + r, cy);
+			path.LineTo(cx, cy + r);
+			path.LineTo(cx - r, cy);
+			path.Close();
+			c.DrawPath(path, paint);
+		}
+
+		int Dp(int v) =>
+			(int)TypedValue.ApplyDimension(ComplexUnitType.Dip, v, Resources.DisplayMetrics);
 	}
 }
