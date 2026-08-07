@@ -3,6 +3,7 @@
 using System;
 using Android.Content;
 using Android.Graphics;
+using GPath = Android.Graphics.Path;
 using Android.Graphics.Drawables;
 using Android.Util;
 using Android.Views;
@@ -218,7 +219,7 @@ namespace OpenRA.Android
 
 		void DrawStar(Canvas c, float cx, float cy, float r)
 		{
-			var path = new Path();
+			var path = new GPath();
 			for (var i = 0; i < 5; i++)
 			{
 				var a = (float)(-Math.PI / 2 + i * 2 * Math.PI / 5);
@@ -236,7 +237,7 @@ namespace OpenRA.Android
 
 		void DrawHex(Canvas c, float cx, float cy, float r)
 		{
-			var path = new Path();
+			var path = new GPath();
 			for (var i = 0; i < 6; i++)
 			{
 				var a = (float)(i * Math.PI / 3);
@@ -250,7 +251,7 @@ namespace OpenRA.Android
 
 		void DrawTriangle(Canvas c, float cx, float cy, float r)
 		{
-			var path = new Path();
+			var path = new GPath();
 			path.MoveTo(cx, cy - r);
 			path.LineTo(cx + r * 0.9f, cy + r * 0.6f);
 			path.LineTo(cx - r * 0.9f, cy + r * 0.6f);
@@ -260,7 +261,7 @@ namespace OpenRA.Android
 
 		void DrawDiamond(Canvas c, float cx, float cy, float r)
 		{
-			var path = new Path();
+			var path = new GPath();
 			path.MoveTo(cx, cy - r);
 			path.LineTo(cx + r, cy);
 			path.LineTo(cx, cy + r);

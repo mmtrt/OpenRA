@@ -382,7 +382,7 @@ jobs:
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
           set -euo pipefail
           # Mod DLLs are managed assemblies; build net10.0 (not android) for packaging into Assets
-          for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc OpenRA.Mods.D2k; do
+          for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc; do
             if [ -f "$proj/$proj.csproj" ]; then
               echo "=== Building $proj ($CONFIG) ==="
               # OpenRAAndroid=false so Directory.Build.props keeps net10.0 (not android)
@@ -390,6 +390,7 @@ jobs:
                 -c "$CONFIG" \
                 -f net10.0 \
                 /p:OpenRAAndroid=false \
+                /p:CopyLocalLockFileAssemblies=true \
                 --verbosity minimal
             else
               echo "Skip missing $proj"
@@ -401,149 +402,23 @@ jobs:
         run: |
           set -euo pipefail
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
+          chmod +x scripts/package-android-assets.sh
+          # Package FULL mod trees + assemblies from the same tree that built the DLLs.
+          # Fixes ruleset errors like: v2rl Chronoshiftable requires Mobile or Husk
+          # (caused by incomplete YAML or DLL/YAML version skew).
+          ./scripts/package-android-assets.sh \
+            "${{ github.workspace }}" \
+            "OpenRA.AndroidLauncher/Assets" \
+            "$CONFIG"
+
+          # Extra guard: rules files required for RA ruleset validation
           ASSETS="OpenRA.AndroidLauncher/Assets"
-          mkdir -p "$ASSETS/mods" "$ASSETS/glsl" "$ASSETS/assemblies" "$ASSETS/Content"
-
-          # --- mods (YAML/chrome/rules; not original MIX data) ---
-          for mod in common common-content ra ra-content cnc d2k; do
-            if [ -d "mods/$mod" ]; then
-              echo "Packaging mods/$mod"
-              rm -rf "$ASSETS/mods/$mod"
-              mkdir -p "$ASSETS/mods/$mod"
-              cp -a "mods/$mod/." "$ASSETS/mods/$mod/"
-            else
-              echo "WARNING: mods/$mod not found"
-            fi
-          done
-
-          # --- glsl shaders ---
-          if [ -d glsl ]; then
-            echo "Packaging glsl/"
-            rm -rf "$ASSETS/glsl"
-            mkdir -p "$ASSETS/glsl"
-            cp -a glsl/. "$ASSETS/glsl/"
-          else
-            echo "WARNING: glsl/ not found"
-          fi
-
-          # --- mod assemblies + all managed deps from build output ---
-          copy_dll() {
-            local f="$1"
-            if [ -f "$f" ]; then
-              echo "Assembly $(basename "$f") <- $f"
-              cp -f "$f" "$ASSETS/assemblies/"
-            fi
-          }
-
-          # Prefer full output dir of Mods.Common (CopyLocalLockFileAssemblies=true)
-          # so TagLibSharp, MP3Sharp, NVorbis, Pfim, BeaconLib, FuzzyLogic, DiscordRPC, etc. come along.
-          COMMON_OUT=""
-          for candidate in \
-            "OpenRA.Mods.Common/bin/$CONFIG/net10.0" \
-            "OpenRA.Mods.Common/bin/$CONFIG" \
-            "bin/net10.0" \
-            "bin"
-          do
-            if [ -d "$candidate" ] && ls "$candidate"/OpenRA.Mods.Common.dll >/dev/null 2>&1; then
-              COMMON_OUT="$candidate"
-              break
-            fi
-          done
-
-          if [ -n "$COMMON_OUT" ]; then
-            echo "Copying managed assemblies from $COMMON_OUT"
-            # All non-OpenRA.Game runtime DLLs (mods + nuget deps)
-            find "$COMMON_OUT" -maxdepth 1 -name '*.dll' -type f | while read -r f; do
-              base=$(basename "$f")
-              case "$base" in
-                OpenRA.Game.dll|OpenRA.Platforms.*.dll) continue ;;
-              esac
-              copy_dll "$f"
-            done
-          else
-            echo "WARNING: Mods.Common output dir not found; falling back to named search"
-            for dll in \
-              bin/OpenRA.Mods.Common.dll \
-              bin/OpenRA.Mods.Cnc.dll \
-              bin/OpenRA.Mods.D2k.dll \
-              "OpenRA.Mods.Common/bin/$CONFIG/net10.0/OpenRA.Mods.Common.dll" \
-              "OpenRA.Mods.Cnc/bin/$CONFIG/net10.0/OpenRA.Mods.Cnc.dll" \
-              "OpenRA.Mods.D2k/bin/$CONFIG/net10.0/OpenRA.Mods.D2k.dll"
-            do
-              copy_dll "$dll"
-            done
-            for dep in TagLibSharp.dll MP3Sharp.dll NVorbis.dll Pfim.dll \
-                       DiscordRPC.dll rix0rrr.BeaconLib.dll OpenRA-FuzzyLogicLibrary.dll \
-                       FuzzyLogicLibrary.dll BeaconLib.dll; do
-              found=$(find . -path ./OpenRA.AndroidLauncher -prune -o -name "$dep" -print 2>/dev/null | head -1 || true)
-              [ -n "$found" ] && copy_dll "$found"
-            done
-          fi
-
-          # Also pull Cnc/D2k outputs if not already copied
-          for proj in OpenRA.Mods.Cnc OpenRA.Mods.D2k; do
-            for candidate in "$proj/bin/$CONFIG/net10.0" "$proj/bin/$CONFIG"; do
-              if [ -f "$candidate/$proj.dll" ] || [ -f "$candidate/OpenRA.Mods.Cnc.dll" ] || [ -f "$candidate/OpenRA.Mods.D2k.dll" ]; then
-                find "$candidate" -maxdepth 1 -name 'OpenRA.Mods.*.dll' -type f | while read -r f; do
-                  copy_dll "$f"
-                done
-              fi
-            done
-          done
-
-
-          # Explicit AppImage-derived dependency names (in case output layout differs)
-          for dep in \
-            TagLibSharp.dll MP3Sharp.dll NVorbis.dll Pfim.dll DiscordRPC.dll \
-            BeaconLib.dll rix0rrr.BeaconLib.dll FuzzyLogicLibrary.dll \
-            ICSharpCode.SharpZipLib.dll Mono.Nat.dll Newtonsoft.Json.dll \
-            Linguini.Bundle.dll Linguini.Shared.dll Linguini.Syntax.dll \
-            Microsoft.Extensions.DependencyModel.dll Eluant.dll
-          do
-            if [ ! -f "$ASSETS/assemblies/$dep" ]; then
-              found=$(find . -path ./OpenRA.AndroidLauncher -prune -o -name "$dep" -print 2>/dev/null | head -1 || true)
-              if [ -n "$found" ]; then
-                cp -f "$found" "$ASSETS/assemblies/"
-                echo "Dep fill $dep <- $found"
-              fi
-            fi
-          done
-
-          # global mix database if present
-          for gmdb in "global mix database.dat" "./global mix database.dat"; do
-            if [ -f "$gmdb" ]; then
-              cp -f "$gmdb" "$ASSETS/"
-              echo "Packaged global mix database.dat"
-            fi
-          done
-          find . -name 'global mix database.dat' 2>/dev/null | head -1 | while read -r f; do
-            cp -f "$f" "$ASSETS/" 2>/dev/null || true
-          done
-
-          echo "=== assemblies dir ==="
-          ls -la "$ASSETS/assemblies" || true
-          test -f "$ASSETS/assemblies/TagLibSharp.dll" || echo "WARNING: TagLibSharp.dll still missing"
-          test -f "$ASSETS/assemblies/OpenRA.Mods.Common.dll" || { echo "ERROR: Mods.Common missing"; exit 1; }
-
-
-          echo "android-port-dev" > "$ASSETS/VERSION"
-
-          echo "=== Assets summary ==="
-          du -sh "$ASSETS"/* 2>/dev/null || true
-          echo "mods:"
-          find "$ASSETS/mods" -name mod.yaml 2>/dev/null || true
-          echo "assemblies:"
-          ls -la "$ASSETS/assemblies" 2>/dev/null || true
-          echo "glsl count: $(find "$ASSETS/glsl" -type f 2>/dev/null | wc -l)"
-
-          if [ ! -f "$ASSETS/mods/ra/mod.yaml" ]; then
-            echo "ERROR: Assets/mods/ra/mod.yaml missing — APK would hit Unknown mod 'ra'"
-            exit 1
-          fi
-          if [ ! -f "$ASSETS/assemblies/OpenRA.Mods.Common.dll" ]; then
-            echo "ERROR: OpenRA.Mods.Common.dll not packaged"
-            exit 1
-          fi
+          test -f "$ASSETS/mods/ra/rules/vehicles.yaml"
+          test -f "$ASSETS/mods/ra/rules/defaults.yaml"
+          test -f "$ASSETS/mods/common/mod.yaml"
+          test -f "$ASSETS/assemblies/OpenRA.Mods.Common.dll"
+          test -f "$ASSETS/assemblies/OpenRA.Mods.Cnc.dll"
+          echo "Workflow packaging OK"
 
       - name: Build Launcher
         working-directory: ${{ env.PROJECT_ROOT }}
