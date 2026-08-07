@@ -195,7 +195,7 @@ namespace OpenRA.Android
 							ToastLength.Long).Show();
 					}
 				})
-				.SetNeutralButton("All-files access", (s, e) => StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this))
+				.SetNeutralButton("All-files access", (s, e) => { StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this); })
 				.SetNegativeButton("OK", (s, e) => { })
 				.Show();
 		}
@@ -210,11 +210,22 @@ namespace OpenRA.Android
 				return;
 			}
 
-			if (!surfaceView.IsSurfaceReady)
+			if (!surfaceView.IsSurfaceReady || !OpenRA.Platforms.Android.AndroidEgl.IsReady)
 			{
-				statusOverlay.Text = "Waiting for surface…";
-				AndroidFileLog.Info("OpenRA.Main", "Engine deferred until surface ready");
-				return;
+				statusOverlay.Text = "Waiting for graphics surface…";
+				AndroidFileLog.Info("OpenRA.Main", "Engine deferred — surface/EGL not ready (egl=" +
+					OpenRA.Platforms.Android.AndroidEgl.IsReady + " err=" + OpenRA.Platforms.Android.AndroidEgl.LastError + ")");
+				// If surface exists but EGL was released, re-init on UI thread
+				if (surfaceView.Width > 0 && surfaceView.Holder?.Surface != null && !OpenRA.Platforms.Android.AndroidEgl.IsReady)
+				{
+					AndroidFileLog.Info("OpenRA.Main", "Re-init EGL on UI thread");
+					if (OpenRA.Platforms.Android.AndroidEgl.Initialize(surfaceView.Holder, surfaceView.Width, surfaceView.Height))
+						AndroidFileLog.Info("OpenRA.Main", "EGL re-init ok");
+					else
+						AndroidFileLog.Warn("OpenRA.Main", "EGL re-init failed: " + OpenRA.Platforms.Android.AndroidEgl.LastError);
+				}
+				if (!surfaceView.IsSurfaceReady || !OpenRA.Platforms.Android.AndroidEgl.IsReady)
+					return;
 			}
 
 			engineStartRequested = true;
@@ -222,6 +233,8 @@ namespace OpenRA.Android
 			statusOverlay.Text = "Starting OpenRA…\n" + ContentBootstrap.SupportDir;
 			try
 			{
+				// Unbind from UI so game thread can MakeCurrent
+				OpenRA.Platforms.Android.AndroidEgl.ReleaseCurrent();
 				EngineBootstrap.Start(surfaceView, "ra");
 			}
 			catch (Exception ex)
@@ -311,7 +324,7 @@ namespace OpenRA.Android
 				.SetMessage(
 					"To use /storage/emulated/0/OpenRA (survives uninstall), grant All files access.\n\n" +
 					"Without it, data stays under Android/data/net.openra.android/files/OpenRA.")
-				.SetPositiveButton("Open settings", (s, e) => StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this))
+				.SetPositiveButton("Open settings", (s, e) => { StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this); })
 				.SetNegativeButton("Use app folder", (s, e) => { })
 				.Show();
 		}

@@ -52,8 +52,59 @@ namespace OpenRA.Android
 				AndroidFileLog.Info("OpenRA.Content", "Assets already present — skip full extract");
 			}
 
+			MigrateContentFromAppExternalIfNeeded();
 			PlaceAssembliesForLoader();
 			LogTree();
+		}
+
+
+		/// <summary>
+		/// If SupportDir is public OpenRA but MIX files only exist under app-external, copy once.
+		/// </summary>
+		static void MigrateContentFromAppExternalIfNeeded()
+		{
+			try
+			{
+				if (ContentProbe.IsBaseContentInstalled(SupportDir))
+					return;
+
+				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
+				if (string.IsNullOrEmpty(ext))
+					return;
+				var oldRoot = Path.Combine(ext, "OpenRA");
+				if (oldRoot == SupportDir)
+					return;
+				if (!ContentProbe.IsBaseContentInstalled(oldRoot))
+					return;
+
+				AndroidFileLog.Info("OpenRA.Content", "Migrating Content from " + oldRoot + " → " + SupportDir);
+				var src = Path.Combine(oldRoot, "Content");
+				var dst = Path.Combine(SupportDir, "Content");
+				if (Directory.Exists(src))
+					CopyDir(src, dst);
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Content", "Migrate: " + e.Message);
+			}
+		}
+
+		static void CopyDir(string src, string dst)
+		{
+			Directory.CreateDirectory(dst);
+			foreach (var dir in Directory.GetDirectories(src, "*", SearchOption.AllDirectories))
+			{
+				var rel = Path.GetRelativePath(src, dir);
+				Directory.CreateDirectory(Path.Combine(dst, rel));
+			}
+			foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+			{
+				var rel = Path.GetRelativePath(src, file);
+				var dest = Path.Combine(dst, rel);
+				Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+				if (!File.Exists(dest) || new FileInfo(dest).Length == 0)
+					File.Copy(file, dest, overwrite: true);
+			}
 		}
 
 		public static void PlaceAssembliesForLoader()
