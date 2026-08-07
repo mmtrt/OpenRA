@@ -1,11 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	<ItemGroup>
 		<ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj">
 			<Private>False</Private>
 		</ProjectReference>
 		<PackageReference Include="NuGet.CommandLine" Version="6.12.5" />
 		<PackageReference Include="OpenRA-FuzzyLogicLibrary" Version="1.0.1" />
-		<PackageReference Include="DiscordRichPresence" Version="1.2.1.24" />
+		<!-- Discord Rich Presence has no equivalent on Android and its netstandard2.0
+		     build depends on System.Diagnostics.Process, which .NET for Android's Mono
+		     runtime cannot resolve (see DiscordService.cs). Exclude it from that build
+		     entirely rather than shipping a DLL nothing references. -->
+		<PackageReference Include="DiscordRichPresence" Version="1.2.1.24" Condition="'$(OpenRAAndroid)' != 'true'" />
 		<PackageReference Include="MP3Sharp" Version="1.0.5" />
 		<PackageReference Include="NVorbis" Version="0.10.5" />
 		<PackageReference Include="TagLibSharp" Version="2.3.0" />
