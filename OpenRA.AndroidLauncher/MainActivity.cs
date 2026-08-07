@@ -144,7 +144,7 @@ namespace OpenRA.Android
 					TryStartEngine();
 				});
 			}
-			catch (OperationCanceledException)
+			catch (System.OperationCanceledException)
 			{
 				RunOnUiThread(() => installView?.SetBusy(false, "Cancelled."));
 			}

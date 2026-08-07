@@ -42,7 +42,7 @@ namespace OpenRA.Android
 				Gravity = GravityFlags.CenterHorizontal
 			};
 			title.SetTextColor(AColor.Rgb(0xe0, 0xd0, 0xa0));
-			title.SetTypeface(Typeface.DefaultBold);
+			title.SetTypeface(Typeface.DefaultBold, TypefaceStyle.Bold);
 
 			var divider = new View(context);
 			divider.SetBackgroundColor(AColor.Rgb(0x80, 0x20, 0x18));
@@ -70,9 +70,9 @@ namespace OpenRA.Android
 			status.SetTextColor(AColor.Rgb(0xa0, 0xb0, 0x80));
 			status.Visibility = ViewStates.Gone;
 
-			progress = new ProgressBar(context, null, Android.Resource.Attribute.ProgressBarStyleHorizontal)
+			progress = new ProgressBar(context)
 			{
-				Indeterminate = false,
+				Indeterminate = true,
 				Max = 1000
 			};
 			progress.Visibility = ViewStates.Gone;
