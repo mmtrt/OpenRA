@@ -12,17 +12,29 @@ on:
     branches: [main, master, android-port, bleed]
     paths:
       - "OpenRA.Game/**"
+      - "OpenRA.Mods.Common/**"
+      - "OpenRA.Mods.Cnc/**"
+      - "OpenRA.Mods.D2k/**"
       - "OpenRA.AndroidLauncher/**"
       - "OpenRA.Platforms.Android/**"
+      - "mods/**"
+      - "glsl/**"
       - "native/android/**"
+      - "scripts/package-android-assets.sh"
       - ".github/workflows/build-apk.yml"
   pull_request:
     branches: [main, master, android-port, bleed]
     paths:
       - "OpenRA.Game/**"
+      - "OpenRA.Mods.Common/**"
+      - "OpenRA.Mods.Cnc/**"
+      - "OpenRA.Mods.D2k/**"
       - "OpenRA.AndroidLauncher/**"
       - "OpenRA.Platforms.Android/**"
+      - "mods/**"
+      - "glsl/**"
       - "native/android/**"
+      - "scripts/package-android-assets.sh"
       - ".github/workflows/build-apk.yml"
   workflow_dispatch:
     inputs:
@@ -361,6 +373,108 @@ jobs:
             -c "$CONFIG" \
             /p:OpenRAAndroid=true \
             --verbosity minimal
+
+      - name: Build mod assemblies (desktop TFM)
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
+          set -euo pipefail
+          # Mod DLLs are managed assemblies; build net10.0 (not android) for packaging into Assets
+          for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc OpenRA.Mods.D2k; do
+            if [ -f "$proj/$proj.csproj" ]; then
+              echo "=== Building $proj ($CONFIG) ==="
+              # OpenRAAndroid=false so Directory.Build.props keeps net10.0 (not android)
+              dotnet build "$proj/$proj.csproj" \
+                -c "$CONFIG" \
+                -f net10.0 \
+                /p:OpenRAAndroid=false \
+                --verbosity minimal
+            else
+              echo "Skip missing $proj"
+            fi
+          done
+
+      - name: Package Android assets (mods, glsl, assemblies)
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          set -euo pipefail
+          CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
+          ASSETS="OpenRA.AndroidLauncher/Assets"
+          mkdir -p "$ASSETS/mods" "$ASSETS/glsl" "$ASSETS/assemblies" "$ASSETS/Content"
+
+          # --- mods (YAML/chrome/rules; not original MIX data) ---
+          for mod in common ra cnc d2k; do
+            if [ -d "mods/$mod" ]; then
+              echo "Packaging mods/$mod"
+              rm -rf "$ASSETS/mods/$mod"
+              mkdir -p "$ASSETS/mods/$mod"
+              cp -a "mods/$mod/." "$ASSETS/mods/$mod/"
+            else
+              echo "WARNING: mods/$mod not found"
+            fi
+          done
+
+          # --- glsl shaders ---
+          if [ -d glsl ]; then
+            echo "Packaging glsl/"
+            rm -rf "$ASSETS/glsl"
+            mkdir -p "$ASSETS/glsl"
+            cp -a glsl/. "$ASSETS/glsl/"
+          else
+            echo "WARNING: glsl/ not found"
+          fi
+
+          # --- mod assemblies ---
+          copy_dll() {
+            local f="$1"
+            if [ -f "$f" ]; then
+              echo "Assembly $(basename "$f") <- $f"
+              cp -f "$f" "$ASSETS/assemblies/"
+            fi
+          }
+
+          # Common output locations after dotnet build
+          for dll in \
+            bin/OpenRA.Mods.Common.dll \
+            bin/OpenRA.Mods.Cnc.dll \
+            bin/OpenRA.Mods.D2k.dll \
+            bin/net10.0/OpenRA.Mods.Common.dll \
+            bin/net10.0/OpenRA.Mods.Cnc.dll \
+            bin/net10.0/OpenRA.Mods.D2k.dll \
+            "OpenRA.Mods.Common/bin/$CONFIG/net10.0/OpenRA.Mods.Common.dll" \
+            "OpenRA.Mods.Cnc/bin/$CONFIG/net10.0/OpenRA.Mods.Cnc.dll" \
+            "OpenRA.Mods.D2k/bin/$CONFIG/net10.0/OpenRA.Mods.D2k.dll"
+          do
+            copy_dll "$dll"
+          done
+
+          # Fallback: search
+          if [ -z "$(ls -A "$ASSETS/assemblies"/*.dll 2>/dev/null || true)" ]; then
+            echo "Searching tree for OpenRA.Mods.*.dll ..."
+            find . -path ./OpenRA.AndroidLauncher -prune -o \
+              -name 'OpenRA.Mods.*.dll' -print 2>/dev/null | head -20 | while read -r f; do
+              copy_dll "$f"
+            done
+          fi
+
+          echo "android-port-dev" > "$ASSETS/VERSION"
+
+          echo "=== Assets summary ==="
+          du -sh "$ASSETS"/* 2>/dev/null || true
+          echo "mods:"
+          find "$ASSETS/mods" -name mod.yaml 2>/dev/null || true
+          echo "assemblies:"
+          ls -la "$ASSETS/assemblies" 2>/dev/null || true
+          echo "glsl count: $(find "$ASSETS/glsl" -type f 2>/dev/null | wc -l)"
+
+          if [ ! -f "$ASSETS/mods/ra/mod.yaml" ]; then
+            echo "ERROR: Assets/mods/ra/mod.yaml missing — APK would hit Unknown mod 'ra'"
+            exit 1
+          fi
+          if [ ! -f "$ASSETS/assemblies/OpenRA.Mods.Common.dll" ]; then
+            echo "ERROR: OpenRA.Mods.Common.dll not packaged"
+            exit 1
+          fi
 
       - name: Build Launcher
         working-directory: ${{ env.PROJECT_ROOT }}

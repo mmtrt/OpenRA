@@ -13,6 +13,7 @@ namespace OpenRA.Android
 	{
 		bool surfaceReady;
 		public bool IsSurfaceReady => surfaceReady && AndroidEgl.IsReady;
+		public event System.Action SurfaceReady;
 		public int SurfaceWidth { get; private set; }
 		public int SurfaceHeight { get; private set; }
 
@@ -40,6 +41,7 @@ namespace OpenRA.Android
 			{
 				surfaceReady = true;
 				ALog.Info("OpenRA.Surface", $"EGL ready {w}x{h}");
+				SurfaceReady?.Invoke();
 			}
 			else
 			{

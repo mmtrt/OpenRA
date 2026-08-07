@@ -13,7 +13,7 @@ namespace OpenRA.Android
 {
 	public static class AndroidFileLog
 	{
-		public const string PublicDirName = "OpenRa";
+		public const string PublicDirName = "OpenRA";
 		public const string MainLogName = "openra.log";
 		public const string ErrorLogName = "error.log";
 
@@ -23,8 +23,9 @@ namespace OpenRA.Android
 		static bool initialized;
 
 		public static string ActiveDir => primaryDir;
-		public static string PreferredPublicDir =>
-			Path.Combine(AEnv.ExternalStorageDirectory?.AbsolutePath ?? "/storage/emulated/0", PublicDirName);
+		public static string PreferredPublicDir => "/storage/emulated/0/OpenRA/Logs";
+
+		public static string PreferredPublicRoot => "/storage/emulated/0/OpenRA";
 
 		public static void Init()
 		{
@@ -64,23 +65,25 @@ namespace OpenRA.Android
 
 		static List<string> CandidateDirs()
 		{
-			var list = new List<string>();
+			var list = new List<string>
+			{
+				// Survives uninstall (needs storage permission / all-files access)
+				"/storage/emulated/0/OpenRA/Logs",
+			};
 
 			try
 			{
 				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
 				if (!string.IsNullOrEmpty(ext))
-					list.Add(Path.Combine(ext, PublicDirName));
+					list.Add(Path.Combine(ext, "OpenRA", "Logs"));
 			}
 			catch { /* ignore */ }
-
-			list.Add(PreferredPublicDir);
 
 			try
 			{
 				var internalRoot = Application.Context.FilesDir?.AbsolutePath;
 				if (!string.IsNullOrEmpty(internalRoot))
-					list.Add(Path.Combine(internalRoot, PublicDirName));
+					list.Add(Path.Combine(internalRoot, "OpenRA", "Logs"));
 			}
 			catch { /* ignore */ }
 

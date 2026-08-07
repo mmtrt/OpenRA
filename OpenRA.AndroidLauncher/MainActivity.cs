@@ -1,6 +1,8 @@
-// Android entry point — arm64-v8a only, Rusted Warfare touch.
+// Android entry — Install Content gate, then engine start.
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Android.App;
 using Android.Content.PM;
 using Android.OS;
@@ -25,8 +27,12 @@ namespace OpenRA.Android
 		public static OpenRA.Platforms.Android.AndroidPlatformWindow PlatformWindow;
 
 		GameSurfaceView surfaceView;
+		InstallContentView installView;
 		TextView statusOverlay;
+		FrameLayout root;
 		bool bootstrapAttempted;
+		bool engineStartRequested;
+		CancellationTokenSource installCts;
 		const int StoragePermissionRequest = 1001;
 
 		protected override void OnCreate(Bundle savedInstanceState)
@@ -44,87 +50,197 @@ namespace OpenRA.Android
 				Window.DecorView.SystemUiFlags =
 					SystemUiFlags.HideNavigation | SystemUiFlags.Fullscreen | SystemUiFlags.ImmersiveSticky;
 
+			root = new FrameLayout(this);
 			surfaceView = new GameSurfaceView(this);
 			surfaceView.SetOnTouchListener(this);
+			surfaceView.SurfaceReady += () =>
+			{
+				RunOnUiThread(() =>
+				{
+					if (installView == null && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
+						TryStartEngine();
+				});
+			};
+			root.AddView(surfaceView, new FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
 			statusOverlay = new TextView(this)
 			{
-				Text = "OpenRA Android (arm64)\nRW touch ready\nLog: " + (AndroidFileLog.ActiveDir ?? AndroidFileLog.PreferredPublicDir),
+				Text = "OpenRA Android",
 				Gravity = GravityFlags.Center,
-				TextSize = 12f
+				TextSize = 13f
 			};
 			statusOverlay.SetBackgroundColor(AColor.Argb(160, 0, 0, 0));
 			statusOverlay.SetTextColor(AColor.White);
-
-			var layout = new FrameLayout(this);
-			layout.AddView(surfaceView, new FrameLayout.LayoutParams(
-				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
-			layout.AddView(statusOverlay, new FrameLayout.LayoutParams(
+			root.AddView(statusOverlay, new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
 			{
 				Gravity = GravityFlags.Bottom
 			});
-			SetContentView(layout);
+
+			SetContentView(root);
+
+			// Resolve SupportDir early (creates public OpenRA tree when possible)
+			ContentBootstrap.EnsureLayout(null);
+			var support = ContentBootstrap.SupportDir;
+			AndroidFileLog.Info("OpenRA.Main", "SupportDir=" + support);
+
+			if (ContentProbe.IsBaseContentInstalled(support))
+			{
+				AndroidFileLog.Info("OpenRA.Main", "Content present — skip install UI");
+				statusOverlay.Text = "Content found — starting engine…\n" + support;
+				// Engine starts when surface is ready (OnTouch / surface path)
+			}
+			else
+			{
+				AndroidFileLog.Info("OpenRA.Main", "Content missing: " + ContentProbe.MissingSummary(support));
+				ShowInstallUi();
+			}
 		}
 
-		void RequestStorageIfNeeded()
+		void ShowInstallUi()
 		{
-			if ((int)Build.VERSION.SdkInt >= 30)
+			if (installView != null)
+				return;
+
+			installView = new InstallContentView(this);
+			installView.QuickInstallClicked += OnQuickInstall;
+			installView.AdvancedInstallClicked += OnAdvancedInstall;
+			installView.QuitClicked += () => Finish();
+			root.AddView(installView, new FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+			statusOverlay.Text = "Install required content to continue\n" + ContentBootstrap.SupportDir;
+		}
+
+		void HideInstallUi()
+		{
+			if (installView == null)
+				return;
+			root.RemoveView(installView);
+			installView = null;
+		}
+
+		async void OnQuickInstall()
+		{
+			installCts?.Cancel();
+			installCts = new CancellationTokenSource();
+			var support = ContentBootstrap.SupportDir;
+			installView?.SetBusy(true, "Starting Quick Install…");
+
+			var progress = new Progress<QuickInstallService.Progress>(p =>
 			{
-				try
+				RunOnUiThread(() => installView?.SetProgress(p.Status, p.Fraction));
+			});
+
+			try
+			{
+				await QuickInstallService.InstallAsync(support, progress, installCts.Token)
+					.ConfigureAwait(true);
+
+				RunOnUiThread(() =>
 				{
-					if (!AEnv.IsExternalStorageManager)
-						AndroidFileLog.Warn("OpenRA.Main", "All-files access not granted; will try path then fall back");
-				}
-				catch { /* ignore */ }
+					HideInstallUi();
+					statusOverlay.Text = "Content installed — starting engine…";
+					TryStartEngine();
+				});
+			}
+			catch (OperationCanceledException)
+			{
+				RunOnUiThread(() => installView?.SetBusy(false, "Cancelled."));
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Exception("OpenRA.Install", e);
+				RunOnUiThread(() =>
+				{
+					installView?.SetBusy(false, "Failed: " + e.Message);
+					Toast.MakeText(this, "Quick Install failed — see openra.log", ToastLength.Long).Show();
+				});
+			}
+		}
+
+		void OnAdvancedInstall()
+		{
+			// Phase 1: point user at path; SAF picker can come next
+			var path = ContentProbe.ContentRaV2(ContentBootstrap.SupportDir);
+			var msg =
+				"Copy original RA files into:\n" + path + "\n\n" +
+				"Required: allies.mix, conquer.mix, interior.mix, hires.mix, lores.mix, " +
+				"local.mix, speech.mix, russian.mix, snow.mix, sounds.mix, temperat.mix\n\n" +
+				"Then tap Quick Install again or restart the app.";
+			AndroidFileLog.Info("OpenRA.Install", "Advanced Install help shown");
+			new AlertDialog.Builder(this)
+				.SetTitle("Advanced Install")
+				.SetMessage(msg)
+				.SetPositiveButton("I copied files — check again", (s, e) =>
+				{
+					if (ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
+					{
+						HideInstallUi();
+						statusOverlay.Text = "Content found — starting engine…";
+						TryStartEngine();
+					}
+					else
+					{
+						Toast.MakeText(this,
+							"Still missing: " + ContentProbe.MissingSummary(ContentBootstrap.SupportDir),
+							ToastLength.Long).Show();
+					}
+				})
+				.SetNegativeButton("OK", (s, e) => { })
+				.Show();
+		}
+
+		void TryStartEngine()
+		{
+			if (engineStartRequested)
+				return;
+			if (!ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
+			{
+				ShowInstallUi();
 				return;
 			}
 
-			if ((int)Build.VERSION.SdkInt >= 23)
+			if (!surfaceView.IsSurfaceReady)
 			{
-				if (CheckSelfPermission(AManifest.Permission.WriteExternalStorage) != Permission.Granted)
-				{
-					RequestPermissions(
-						new[] { AManifest.Permission.WriteExternalStorage, AManifest.Permission.ReadExternalStorage },
-						StoragePermissionRequest);
-				}
+				statusOverlay.Text = "Waiting for surface…";
+				AndroidFileLog.Info("OpenRA.Main", "Engine deferred until surface ready");
+				return;
 			}
-		}
 
-		public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
-		{
-			base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
-			if (requestCode == StoragePermissionRequest)
+			engineStartRequested = true;
+			bootstrapAttempted = true;
+			statusOverlay.Text = "Starting OpenRA…\n" + ContentBootstrap.SupportDir;
+			try
 			{
-				AndroidFileLog.Init();
-				AndroidFileLog.Info("OpenRA.Main", "Storage permission result; logdir=" + AndroidFileLog.ActiveDir);
+				EngineBootstrap.Start(surfaceView, "ra");
+			}
+			catch (Exception ex)
+			{
+				engineStartRequested = false;
+				AndroidFileLog.Exception("OpenRA.Main", ex);
+				statusOverlay.Text = "Engine start failed — see openra.log";
 			}
 		}
 
 		public bool OnTouch(View v, MotionEvent e)
 		{
+			// Don't start engine while install UI is up
+			if (installView != null)
+				return true;
+
 			if (!bootstrapAttempted && surfaceView.IsSurfaceReady)
 			{
-				bootstrapAttempted = true;
-				try
-				{
-					EngineBootstrap.Start(surfaceView, "ra");
-					statusOverlay.Text = "OpenRA Android (arm64)\nEngine starting…\nLog: " + AndroidFileLog.ActiveDir;
-				}
-				catch (Exception ex)
-				{
-					AndroidFileLog.Exception("OpenRA.Main", ex);
-					statusOverlay.Text = "Bootstrap failed — see error.log";
-				}
+				if (ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
+					TryStartEngine();
+				else
+					ShowInstallUi();
 			}
 
 			PlatformWindow ??= OpenRA.Platforms.Android.AndroidPlatformWindow.Current;
 			var input = PlatformWindow?.Input;
 			if (input == null)
-			{
-				ALog.Debug("OpenRA.Touch", $"{e.ActionMasked} pointers={e.PointerCount}");
 				return true;
-			}
 
 			var action = e.ActionMasked;
 			var index = e.ActionIndex;
@@ -155,6 +271,59 @@ namespace OpenRA.Android
 			return true;
 		}
 
+		protected override void OnResume()
+		{
+			base.OnResume();
+			OpenRA.Platforms.Android.AndroidEgl.MakeCurrent();
+			AndroidFileLog.Info("OpenRA.Main", "OnResume");
+			// If user returned after copying files
+			if (installView != null && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
+			{
+				HideInstallUi();
+				TryStartEngine();
+			}
+			else if (installView == null && !engineStartRequested
+			         && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir)
+			         && surfaceView.IsSurfaceReady)
+			{
+				TryStartEngine();
+			}
+		}
+
+		void RequestStorageIfNeeded()
+		{
+			if ((int)Build.VERSION.SdkInt >= 30)
+			{
+				try
+				{
+					if (!AEnv.IsExternalStorageManager)
+						AndroidFileLog.Warn("OpenRA.Main", "All-files access not granted; may fall back to app storage");
+				}
+				catch { /* ignore */ }
+				return;
+			}
+
+			if ((int)Build.VERSION.SdkInt >= 23)
+			{
+				if (CheckSelfPermission(AManifest.Permission.WriteExternalStorage) != Permission.Granted)
+				{
+					RequestPermissions(
+						new[] { AManifest.Permission.WriteExternalStorage, AManifest.Permission.ReadExternalStorage },
+						StoragePermissionRequest);
+				}
+			}
+		}
+
+		public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+		{
+			base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+			if (requestCode == StoragePermissionRequest)
+			{
+				ContentBootstrap.EnsureLayout(null);
+				AndroidFileLog.Info("OpenRA.Main", "Storage result; SupportDir=" + ContentBootstrap.SupportDir);
+			}
+		}
+
 		protected override void OnPause()
 		{
 			base.OnPause();
@@ -162,16 +331,9 @@ namespace OpenRA.Android
 			AndroidFileLog.Info("OpenRA.Main", "OnPause");
 		}
 
-		protected override void OnResume()
-		{
-			base.OnResume();
-			PlatformWindow?.SetSuspended(false);
-			OpenRA.Platforms.Android.AndroidEgl.MakeCurrent();
-			AndroidFileLog.Info("OpenRA.Main", "OnResume");
-		}
-
 		protected override void OnDestroy()
 		{
+			installCts?.Cancel();
 			AndroidFileLog.Info("OpenRA.Main", "OnDestroy");
 			EngineBootstrap.Stop();
 			base.OnDestroy();
