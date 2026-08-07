@@ -27,7 +27,7 @@ namespace OpenRA.Platforms.Android
 
 		public static bool IsReady
 		{
-			get { lock (Gate) return initialized && surface != null && surface != EGL14.EglNoSurface; }
+			get { lock (Gate) return initialized && surface != null && surface != EGL14.EglNoSurface && context != null && context != EGL14.EglNoContext; }
 		}
 
 		public static int SurfaceWidth { get; private set; }
@@ -72,7 +72,7 @@ namespace OpenRA.Platforms.Android
 					if (!EGL14.EglChooseConfig(display, attribList, 0, configs, 0, configs.Length, numConfigs, 0)
 					    || numConfigs[0] == 0)
 					{
-						ALog.Warn("OpenRA.EGL", "ES3 config missing, trying ES2-bit RGBA8888");
+						ALog.Warn("OpenRA.EGL", "ES3 config missing, trying ES2");
 						attribList = new[]
 						{
 							EGL14.EglRedSize, 8,
@@ -95,7 +95,6 @@ namespace OpenRA.Platforms.Android
 					context = EGL14.EglCreateContext(display, config, EGL14.EglNoContext, ctxAttribs, 0);
 					if (context == null || context == EGL14.EglNoContext)
 					{
-						ALog.Warn("OpenRA.EGL", "ES3 context failed, trying ES2");
 						ctxAttribs = new[] { EglContextClientVersion, 2, EGL14.EglNone };
 						context = EGL14.EglCreateContext(display, config, EGL14.EglNoContext, ctxAttribs, 0);
 						if (context == null || context == EGL14.EglNoContext)
@@ -104,12 +103,13 @@ namespace OpenRA.Platforms.Android
 
 					if (!CreateWindowSurfaceUnlocked(holder))
 						return false;
-					if (!MakeCurrentUnlocked())
-						return Fail("eglMakeCurrent failed: " + EglError());
+
+					// Leave unbound after init so the game thread can MakeCurrent cleanly
+					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
 
 					initialized = true;
 					LastError = "";
-					ALog.Info("OpenRA.EGL", $"ready {SurfaceWidth}x{SurfaceHeight}");
+					ALog.Info("OpenRA.EGL", $"ready {SurfaceWidth}x{SurfaceHeight} (unbound for game thread)");
 					return true;
 				}
 				catch (Exception e)
@@ -138,13 +138,39 @@ namespace OpenRA.Platforms.Android
 
 				if (!CreateWindowSurfaceUnlocked(holder))
 					return false;
-				return MakeCurrentUnlocked();
+
+				EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
+				return true;
 			}
 		}
 
 		public static bool MakeCurrent()
 		{
-			lock (Gate) return MakeCurrentUnlocked();
+			lock (Gate)
+			{
+				if (display == null || display == EGL14.EglNoDisplay)
+					return FailKeep("MakeCurrent: no display");
+				if (surface == null || surface == EGL14.EglNoSurface)
+					return FailKeep("MakeCurrent: no surface");
+				if (context == null || context == EGL14.EglNoContext)
+					return FailKeep("MakeCurrent: no context");
+
+				if (!EGL14.EglMakeCurrent(display, surface, surface, context))
+					return FailKeep("eglMakeCurrent failed: " + EglError());
+
+				LastError = "";
+				return true;
+			}
+		}
+
+		/// <summary>Release context from the current thread (call on UI before game thread owns GL).</summary>
+		public static void ReleaseCurrent()
+		{
+			lock (Gate)
+			{
+				if (display != null && display != EGL14.EglNoDisplay)
+					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
+			}
 		}
 
 		public static void SwapBuffers()
@@ -176,15 +202,11 @@ namespace OpenRA.Platforms.Android
 			return true;
 		}
 
-		static bool MakeCurrentUnlocked()
-		{
-			if (display == null || display == EGL14.EglNoDisplay)
-				return false;
-			return EGL14.EglMakeCurrent(display, surface, surface, context);
-		}
-
 		static void DestroyUnlocked()
 		{
+			if (display != null && display == EGL14.EglNoDisplay)
+				return;
+
 			if (display != null && display != EGL14.EglNoDisplay)
 			{
 				EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
@@ -207,6 +229,13 @@ namespace OpenRA.Platforms.Android
 			LastError = message;
 			ALog.Error("OpenRA.EGL", message);
 			DestroyUnlocked();
+			return false;
+		}
+
+		static bool FailKeep(string message)
+		{
+			LastError = message;
+			ALog.Error("OpenRA.EGL", message);
 			return false;
 		}
 

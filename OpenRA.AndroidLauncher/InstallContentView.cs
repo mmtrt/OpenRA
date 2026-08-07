@@ -1,8 +1,9 @@
-// Native Install Content UI (modeled on official OpenRA dialog).
+// Native Install Content UI — styled after official OpenRA chrome dialog.
 
 using System;
 using Android.Content;
 using Android.Graphics;
+using Android.Graphics.Drawables;
 using Android.Util;
 using Android.Views;
 using Android.Widget;
@@ -26,28 +27,30 @@ namespace OpenRA.Android
 
 		public InstallContentView(Context context) : base(context)
 		{
-			SetBackgroundColor(AColor.Rgb(0x0a, 0x0a, 0x0a));
+			// Faction watermark background (dark, like official)
+			SetBackgroundColor(AColor.Rgb(0x12, 0x12, 0x14));
 
-			var card = new LinearLayout(context)
-			{
-				Orientation = Orientation.Vertical
-			};
-			card.SetBackgroundColor(AColor.Rgb(0x1a, 0x1c, 0x14));
-			card.SetPadding(Dp(20), Dp(20), Dp(20), Dp(20));
+			var card = new LinearLayout(context) { Orientation = Orientation.Vertical };
+			var cardBg = new GradientDrawable();
+			cardBg.SetColor(AColor.Argb(230, 0x1a, 0x1c, 0x14));
+			cardBg.SetStroke(Dp(2), AColor.Rgb(0x90, 0x28, 0x18));
+			cardBg.SetCornerRadius(Dp(4));
+			card.Background = cardBg;
+			card.SetPadding(Dp(22), Dp(18), Dp(22), Dp(16));
 
 			title = new TextView(context)
 			{
 				Text = "Install Content",
-				TextSize = 20f,
+				TextSize = 18f,
 				Gravity = GravityFlags.CenterHorizontal
 			};
-			title.SetTextColor(AColor.Rgb(0xe0, 0xd0, 0xa0));
+			title.SetTextColor(AColor.Rgb(0xe8, 0xd8, 0xa8));
 			title.SetTypeface(Typeface.DefaultBold, TypefaceStyle.Bold);
 
 			var divider = new View(context);
-			divider.SetBackgroundColor(AColor.Rgb(0x80, 0x20, 0x18));
+			divider.SetBackgroundColor(AColor.Rgb(0x90, 0x28, 0x18));
 			var divLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(2));
-			divLp.TopMargin = Dp(12);
+			divLp.TopMargin = Dp(10);
 			divLp.BottomMargin = Dp(12);
 
 			body = new TextView(context)
@@ -56,8 +59,9 @@ namespace OpenRA.Android
 					"Red Alert requires artwork and audio from the original game.\n\n" +
 					"Quick Install will automatically download this content (without music " +
 					"or videos) from a mirror of the 2008 Red Alert freeware release.\n\n" +
-					"Advanced Install can copy content you already have on the device.",
-				TextSize = 14f
+					"Advanced Install includes options for copying the music, videos, and " +
+					"other content from an original game disc or digital installation.",
+				TextSize = 13f
 			};
 			body.SetTextColor(AColor.Rgb(0xc8, 0xc0, 0xa8));
 
@@ -80,7 +84,7 @@ namespace OpenRA.Android
 			var buttons = new LinearLayout(context) { Orientation = Orientation.Horizontal };
 			buttons.SetGravity(GravityFlags.CenterHorizontal);
 			var btnLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f);
-			btnLp.SetMargins(Dp(4), Dp(16), Dp(4), 0);
+			btnLp.SetMargins(Dp(4), Dp(14), Dp(4), 0);
 
 			advanced = MakeButton(context, "Advanced Install");
 			quick = MakeButton(context, "Quick Install");
@@ -94,28 +98,36 @@ namespace OpenRA.Android
 			buttons.AddView(quick, btnLp);
 			buttons.AddView(quit, btnLp);
 
-			card.AddView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+			card.AddView(title, MatchWrap());
 			card.AddView(divider, divLp);
-			card.AddView(body, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
-			card.AddView(status, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
+			card.AddView(body, MatchWrap());
+			card.AddView(status, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(10) });
 			card.AddView(progress, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(8) });
-			card.AddView(buttons, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+			card.AddView(buttons, MatchWrap());
 
 			var cardLp = new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
 			{
 				Gravity = GravityFlags.Center,
-				LeftMargin = Dp(24),
-				RightMargin = Dp(24)
+				LeftMargin = Dp(28),
+				RightMargin = Dp(28)
 			};
 			AddView(card, cardLp);
 		}
 
+		static LinearLayout.LayoutParams MatchWrap() =>
+			new(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
+
 		static Button MakeButton(Context context, string text)
 		{
 			var b = new Button(context) { Text = text, TextSize = 12f };
-			b.SetTextColor(AColor.White);
-			b.SetBackgroundColor(AColor.Rgb(0x3a, 0x3a, 0x32));
+			b.SetTextColor(AColor.Rgb(0xf0, 0xe8, 0xd0));
+			var bg = new GradientDrawable();
+			bg.SetColor(AColor.Rgb(0x3a, 0x3a, 0x32));
+			bg.SetStroke(2, AColor.Rgb(0x70, 0x68, 0x50));
+			bg.SetCornerRadius(6f);
+			b.Background = bg;
+			b.SetPadding(16, 12, 16, 12);
 			return b;
 		}
 
@@ -143,9 +155,7 @@ namespace OpenRA.Android
 				progress.Progress = (int)(fraction * 1000);
 		}
 
-		int Dp(int value)
-		{
-			return (int)TypedValue.ApplyDimension(ComplexUnitType.Dip, value, Resources.DisplayMetrics);
-		}
+		int Dp(int value) =>
+			(int)TypedValue.ApplyDimension(ComplexUnitType.Dip, value, Resources.DisplayMetrics);
 	}
 }

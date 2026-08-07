@@ -68,6 +68,7 @@ namespace OpenRA.Android
 			try
 			{
 				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread enter");
+				AndroidEgl.ReleaseCurrent(); // in case UI thread still held context
 
 				// Critical: assembly names resolve relative to cwd / FilesDir
 				try
@@ -83,7 +84,16 @@ namespace OpenRA.Android
 				ContentBootstrap.PlaceAssembliesForLoader();
 
 				if (!AndroidEgl.MakeCurrent())
+				{
 					AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent failed: " + AndroidEgl.LastError);
+					System.Threading.Thread.Sleep(50);
+					if (!AndroidEgl.MakeCurrent())
+						AndroidFileLog.Error("OpenRA.Bootstrap", "EGL MakeCurrent retry failed: " + AndroidEgl.LastError);
+					else
+						AndroidFileLog.Info("OpenRA.Bootstrap", "EGL MakeCurrent ok on retry");
+				}
+				else
+					AndroidFileLog.Info("OpenRA.Bootstrap", "EGL MakeCurrent ok");
 
 				var versionPath = Path.Combine(SupportDir, "VERSION");
 				if (!File.Exists(versionPath))

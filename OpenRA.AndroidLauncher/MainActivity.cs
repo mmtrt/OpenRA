@@ -89,6 +89,9 @@ namespace OpenRA.Android
 			ContentBootstrap.EnsureLayout(null);
 			var support = ContentBootstrap.SupportDir;
 			AndroidFileLog.Info("OpenRA.Main", "SupportDir=" + support);
+			if ((int)Build.VERSION.SdkInt >= 30 && !StorageAccess.HasAllFilesAccess())
+				OfferAllFilesAccessOnce();
+
 
 			if (ContentProbe.IsBaseContentInstalled(support))
 			{
@@ -294,6 +297,23 @@ namespace OpenRA.Android
 			{
 				TryStartEngine();
 			}
+		}
+
+		
+		bool allFilesPromptShown;
+		void OfferAllFilesAccessOnce()
+		{
+			if (allFilesPromptShown)
+				return;
+			allFilesPromptShown = true;
+			new AlertDialog.Builder(this)
+				.SetTitle("Storage access")
+				.SetMessage(
+					"To use /storage/emulated/0/OpenRA (survives uninstall), grant All files access.\n\n" +
+					"Without it, data stays under Android/data/net.openra.android/files/OpenRA.")
+				.SetPositiveButton("Open settings", (s, e) => StorageAccess.RequestAllFilesAccess(this))
+				.SetNegativeButton("Use app folder", (s, e) => { })
+				.Show();
 		}
 
 		void RequestStorageIfNeeded()
