@@ -1,10 +1,17 @@
 #region Copyright & License Information
 /*
- * Load arm64 native libraries. SDL2 is NOT loaded — JNI_OnLoad aborts without SDLActivity.
+ * Load arm64 native libraries and install DllImport resolvers for Eluant/OpenAL/FreeType.
+ * SDL2 is NOT loaded — JNI_OnLoad aborts without SDLActivity.
+ *
+ * Eluant uses [DllImport("lua51")]. NativeLibrary resolvers are per-assembly, so we must
+ * attach the resolver to Eluant (and any other late-loaded mod assembly), not only to
+ * OpenRA.Game / Platforms.Android.
  */
 #endregion
 
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ALog = global::Android.Util.Log;
@@ -14,6 +21,8 @@ namespace OpenRA.Platforms.Android
 	public static class AndroidNativeBootstrap
 	{
 		static bool loaded;
+		static readonly HashSet<string> ResolvedAssemblies = new(StringComparer.Ordinal);
+		static string nativeLibDir;
 
 		public static void Init()
 		{
@@ -23,34 +32,81 @@ namespace OpenRA.Platforms.Android
 
 			try
 			{
-				NativeLibrary.SetDllImportResolver(typeof(AndroidNativeBootstrap).Assembly, Resolve);
 				try
 				{
-					NativeLibrary.SetDllImportResolver(typeof(AndroidFreeTypeFont).Assembly, Resolve);
+					nativeLibDir = global::Android.App.Application.Context?.ApplicationInfo?.NativeLibraryDir;
+					ALog.Info("OpenRA.Native", "NativeLibraryDir=" + (nativeLibDir ?? "(null)"));
 				}
 				catch (Exception e)
 				{
-					ALog.Warn("OpenRA.Native", "FreeType resolver: " + e.Message);
+					ALog.Warn("OpenRA.Native", "NativeLibraryDir: " + e.Message);
 				}
 
-				try
+				// Catch assemblies loaded later (Eluant, Mods.Common via ObjectCreator).
+				AppDomain.CurrentDomain.AssemblyLoad += (_, args) =>
 				{
-					var gameAsm = Assembly.Load("OpenRA.Game");
-					NativeLibrary.SetDllImportResolver(gameAsm, Resolve);
-				}
-				catch (Exception e)
-				{
-					ALog.Warn("OpenRA.Native", "Game resolver: " + e.Message);
-				}
+					try { AttachResolver(args.LoadedAssembly); }
+					catch (Exception e) { ALog.Warn("OpenRA.Native", "AssemblyLoad resolver: " + e.Message); }
+				};
 
+				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+					AttachResolver(asm);
+
+				// Prefer the name Eluant requests. Also load dotted form if packaged that way.
+				Load("lua51");
+				Load("lua5.1");
 				Load("openal");
 				Load("freetype");
-				Load("lua5.1");
-				Load("lua51");
+
+				ListNativeDir();
 			}
 			catch (Exception e)
 			{
 				ALog.Error("OpenRA.Native", "Init failed: " + e);
+			}
+		}
+
+		/// <summary>
+		/// Call after mod DLLs are copied to BinDir / before InitializeAndRun so Eluant is covered
+		/// if it is already in the default ALC.
+		/// </summary>
+		public static void AttachResolversToLoadedAssemblies()
+		{
+			try
+			{
+				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+					AttachResolver(asm);
+			}
+			catch (Exception e)
+			{
+				ALog.Warn("OpenRA.Native", "AttachResolvers: " + e.Message);
+			}
+		}
+
+		static void AttachResolver(Assembly asm)
+		{
+			if (asm == null || asm.IsDynamic)
+				return;
+
+			string name;
+			try { name = asm.GetName().Name ?? ""; }
+			catch { return; }
+
+			if (string.IsNullOrEmpty(name) || !ResolvedAssemblies.Add(name))
+				return;
+
+			try
+			{
+				NativeLibrary.SetDllImportResolver(asm, Resolve);
+				ALog.Info("OpenRA.Native", "DllImportResolver → " + name);
+			}
+			catch (InvalidOperationException)
+			{
+				// Already has a resolver — ignore.
+			}
+			catch (Exception e)
+			{
+				ALog.Warn("OpenRA.Native", "SetDllImportResolver(" + name + "): " + e.Message);
 			}
 		}
 
@@ -59,47 +115,105 @@ namespace OpenRA.Platforms.Android
 			try
 			{
 				Java.Lang.JavaSystem.LoadLibrary(name);
-				ALog.Info("OpenRA.Native", "Loaded lib" + name + ".so");
+				ALog.Info("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + ") OK");
+				return;
 			}
 			catch (Java.Lang.Throwable t)
 			{
-				ALog.Warn("OpenRA.Native", "LoadLibrary(" + name + ") Throwable: " + t.Message);
+				ALog.Warn("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + "): " + t.Message);
 			}
 			catch (Exception e)
 			{
-				ALog.Warn("OpenRA.Native", "LoadLibrary(" + name + "): " + e.Message);
+				ALog.Warn("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + "): " + e.Message);
+			}
+
+			// Fallback: absolute path under the app's native lib dir.
+			if (!string.IsNullOrEmpty(nativeLibDir))
+			{
+				foreach (var file in new[] { "lib" + name + ".so", name + ".so", "lib" + name })
+				{
+					var path = Path.Combine(nativeLibDir, file);
+					if (!File.Exists(path))
+						continue;
+					try
+					{
+						if (NativeLibrary.TryLoad(path, out _))
+						{
+							ALog.Info("OpenRA.Native", "TryLoad path OK: " + path);
+							return;
+						}
+					}
+					catch (Exception e)
+					{
+						ALog.Warn("OpenRA.Native", "TryLoad " + path + ": " + e.Message);
+					}
+				}
+			}
+		}
+
+		static void ListNativeDir()
+		{
+			if (string.IsNullOrEmpty(nativeLibDir) || !Directory.Exists(nativeLibDir))
+				return;
+			try
+			{
+				foreach (var f in Directory.GetFiles(nativeLibDir, "liblua*"))
+					ALog.Info("OpenRA.Native", "  found " + f);
+				foreach (var f in Directory.GetFiles(nativeLibDir, "libopenal*"))
+					ALog.Info("OpenRA.Native", "  found " + f);
+				foreach (var f in Directory.GetFiles(nativeLibDir, "libfreetype*"))
+					ALog.Info("OpenRA.Native", "  found " + f);
+			}
+			catch (Exception e)
+			{
+				ALog.Warn("OpenRA.Native", "ListNativeDir: " + e.Message);
 			}
 		}
 
 		static IntPtr Resolve(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
 		{
-			var name = libraryName;
+			var raw = libraryName ?? "";
+			var name = raw;
 			if (name.EndsWith(".so", StringComparison.OrdinalIgnoreCase))
 				name = name[..^3];
 			if (name.StartsWith("lib", StringComparison.Ordinal))
 				name = name[3..];
 
-			name = name switch
+			// Canonical names we package under lib/arm64-v8a/
+			var candidates = name switch
 			{
-				"lua51" or "lua5.1" or "lua" => "lua5.1",
-				"SDL2" or "sdl2" => "SDL2",
-				"openal" or "OpenAL" or "soft_oal" => "openal",
-				"freetype" or "freetype6" or "freetype-6" => "freetype",
-				_ => name
+				"lua51" or "lua5.1" or "lua" => new[] { "lua51", "lua5.1" },
+				"SDL2" or "sdl2" => new[] { "SDL2" },
+				"openal" or "OpenAL" or "soft_oal" => new[] { "openal" },
+				"freetype" or "freetype6" or "freetype-6" => new[] { "freetype" },
+				_ => new[] { name }
 			};
 
-			if (name == "SDL2")
+			if (candidates[0] == "SDL2")
 			{
 				ALog.Warn("OpenRA.Native", "SDL2 resolve blocked");
 				return IntPtr.Zero;
 			}
 
-			if (NativeLibrary.TryLoad(name, assembly, searchPath, out var handle))
-				return handle;
-			if (NativeLibrary.TryLoad("lib" + name + ".so", assembly, searchPath, out handle))
-				return handle;
+			foreach (var c in candidates)
+			{
+				if (NativeLibrary.TryLoad(c, assembly, searchPath, out var handle) && handle != IntPtr.Zero)
+					return handle;
+				if (NativeLibrary.TryLoad("lib" + c + ".so", assembly, searchPath, out handle) && handle != IntPtr.Zero)
+					return handle;
 
-			ALog.Warn("OpenRA.Native", "DllImport resolve failed for " + libraryName);
+				if (!string.IsNullOrEmpty(nativeLibDir))
+				{
+					var path = Path.Combine(nativeLibDir, "lib" + c + ".so");
+					if (File.Exists(path) && NativeLibrary.TryLoad(path, out handle) && handle != IntPtr.Zero)
+					{
+						ALog.Info("OpenRA.Native", "Resolved " + raw + " → " + path);
+						return handle;
+					}
+				}
+			}
+
+			ALog.Warn("OpenRA.Native", "DllImport resolve failed for '" + raw + "' (asm=" + (assembly?.GetName().Name ?? "?") + ")");
 			return IntPtr.Zero;
 		}
 	}

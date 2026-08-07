@@ -31,13 +31,17 @@
     <AndroidNativeLibrary Include="..\native\android\arm64-v8a\liblua5.1.so" />
   </ItemGroup>
 
-  <Target Name="AliasLua51" BeforeTargets="ResolveAssemblies"
-          Condition="Exists('..\native\android\arm64-v8a\liblua5.1.so')">
-    <Copy SourceFiles="..\native\android\arm64-v8a\liblua5.1.so"
-          DestinationFiles="..\native\android\arm64-v8a\liblua51.so"
+  <!-- Eluant DllImport("lua51") needs liblua51.so in the APK (alias of liblua5.1.so). -->
+  <Target Name="AliasLua51" BeforeTargets="ResolveAssemblyReferences;_GetUserAssemblies;_ResolveNativeLibraries"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua5.1.so')">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua5.1.so"
+          DestinationFiles="$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua51.so"
           SkipUnchangedFiles="true" />
     <ItemGroup>
-      <AndroidNativeLibrary Include="..\native\android\arm64-v8a\liblua51.so" />
+      <AndroidNativeLibrary Include="$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua51.so"
+                           Condition="Exists('$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua51.so')" />
+      <AndroidNativeLibrary Include="$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua5.1.so"
+                           Condition="Exists('$(MSBuildThisFileDirectory)..\native\android\arm64-v8a\liblua5.1.so')" />
     </ItemGroup>
   </Target>
 

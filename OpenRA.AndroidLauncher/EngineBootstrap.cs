@@ -232,6 +232,8 @@ namespace OpenRA.Android
 					"Engine.ModSearchPaths=" + ContentBootstrap.ModsDir
 				};
 
+				// Eluant may load here — ensure DllImportResolver is on every assembly in the default ALC.
+				AndroidNativeBootstrap.AttachResolversToLoadedAssemblies();
 				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun " + string.Join(" ", args));
 				Game.InitializeAndRun(args);
 				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun returned");
