@@ -548,10 +548,16 @@ namespace OpenRA.Platforms.Android
 			if (string.IsNullOrEmpty(code))
 				return code;
 
-			// OpenRA glsl uses "#version {VERSION}" — Embedded needs "300 es".
-			code = code.Replace("{VERSION}", "300 es");
+			// OpenRA glsl uses "#version {VERSION}" (or a literal "#version <n>[ core]") —
+			// GLES needs "#version 300 es". Do this in a single pass: running the
+			// placeholder Replace and the numeric-version Regex.Replace back-to-back
+			// causes the regex to re-match the digits just inserted by the first
+			// replacement (e.g. "#version 300 es" -> matches "#version 300" -> becomes
+			// "#version 300 es" + leftover " es" = "#version 300 es es"), which the
+			// GLSL ES compiler rejects with "P0007: Unexpected text found after
+			// #version directive".
 			code = System.Text.RegularExpressions.Regex.Replace(
-				code, @"#version\s+\d+(\s+core)?", "#version 300 es");
+				code, @"#version\s+(\{VERSION\}|\d+(\s+core)?)", "#version 300 es");
 
 			if (!code.Contains("#version", StringComparison.Ordinal))
 				code = "#version 300 es" + Environment.NewLine + code;
