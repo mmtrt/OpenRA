@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 using Android.App;
 using OpenRA;
@@ -16,6 +18,7 @@ namespace OpenRA.Android
 		static Thread gameThread;
 		static int startAttempts;
 		static GameSurfaceView boundSurface;
+		static bool resolveHooked;
 
 		public static void Start(GameSurfaceView surface, string mod = "ra")
 		{
@@ -29,13 +32,18 @@ namespace OpenRA.Android
 				AndroidFileLog.Init();
 				AndroidFileLog.Info("OpenRA.Bootstrap", $"Start attempt={++startAttempts} mod={mod}");
 
-				// Use already-locked SupportDir — do not re-resolve mid-session
 				ContentBootstrap.EnsureLayout(ContentBootstrap.SupportDir ?? StorageAccess.ResolveSupportDir());
 				SupportDir = ContentBootstrap.SupportDir;
 				CacheDir = Path.Combine(SupportDir, "Cache");
 				Directory.CreateDirectory(CacheDir);
 
+				// ObjectCreator loads mod DLLs from Platform.BinDir (== BaseDirectory).
+				// Place assemblies there and install a resolve hook so we never dual-load
+				// (duplicate MobileInfo types break Chronoshiftable.HasTraitInfo<MobileInfo>()).
+				EnsureSingleAssemblyLoad();
 				ContentBootstrap.PlaceAssembliesForLoader();
+				CopyModsToBinDir();
+
 				AndroidNativeBootstrap.Init();
 
 				Platform.AndroidFilesDir = SupportDir;
@@ -65,7 +73,129 @@ namespace OpenRA.Android
 			catch (Exception e)
 			{
 				IsRunning = false;
-				AndroidFileLog.Exception("OpenRA.Bootstrap", e);
+				AndroidFileLog.Exception("OpenRA.Bootstrap.Start", e);
+			}
+		}
+
+		/// <summary>
+		/// Prefer already-loaded assemblies by simple name so ObjectCreator's LoadFrom path
+		/// cannot introduce a second copy of OpenRA.Mods.Common with different Type identities.
+		/// </summary>
+		static void EnsureSingleAssemblyLoad()
+		{
+			if (resolveHooked)
+				return;
+			resolveHooked = true;
+
+			AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
+			{
+				try
+				{
+					var simple = new AssemblyName(args.Name).Name;
+					if (string.IsNullOrEmpty(simple))
+						return null;
+
+					foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+					{
+						try
+						{
+							if (a.GetName().Name == simple)
+								return a;
+						}
+						catch { /* dynamic */ }
+					}
+
+					// Fall back: SupportDir / BaseDirectory
+					foreach (var dir in new[]
+					{
+						AppDomain.CurrentDomain.BaseDirectory,
+						SupportDir,
+						ContentBootstrap.SupportDir
+					})
+					{
+						if (string.IsNullOrEmpty(dir))
+							continue;
+						var path = Path.Combine(dir, simple + ".dll");
+						if (File.Exists(path))
+						{
+							AndroidFileLog.Info("OpenRA.Bootstrap", "AssemblyResolve load " + path);
+							return Assembly.LoadFrom(path);
+						}
+					}
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "AssemblyResolve: " + e.Message);
+				}
+
+				return null;
+			};
+
+			AndroidFileLog.Info("OpenRA.Bootstrap", "AssemblyResolve hook installed");
+			AndroidFileLog.Info("OpenRA.Bootstrap", "BaseDirectory=" + AppDomain.CurrentDomain.BaseDirectory);
+		}
+
+		static void CopyModsToBinDir()
+		{
+			var bin = AppDomain.CurrentDomain.BaseDirectory;
+			if (string.IsNullOrEmpty(bin) || string.IsNullOrEmpty(SupportDir))
+				return;
+
+			try
+			{
+				Directory.CreateDirectory(bin);
+			}
+			catch { /* ignore */ }
+
+			foreach (var name in new[]
+			{
+				"OpenRA.Mods.Common.dll",
+				"OpenRA.Mods.Cnc.dll",
+				"Eluant.dll",
+				"TagLibSharp.dll",
+				"Newtonsoft.Json.dll",
+				"ICSharpCode.SharpZipLib.dll",
+				"Linguini.Bundle.dll",
+				"Linguini.Shared.dll",
+				"Linguini.Syntax.dll",
+				"BeaconLib.dll",
+				"DiscordRPC.dll",
+				"FuzzyLogicLibrary.dll",
+				"MP3Sharp.dll",
+				"Mono.Nat.dll",
+				"NVorbis.dll",
+				"Pfim.dll",
+				"Microsoft.Extensions.DependencyModel.dll"
+			})
+			{
+				var src = Path.Combine(SupportDir, name);
+				if (!File.Exists(src))
+					continue;
+				var dest = Path.Combine(bin, name);
+				try
+				{
+					if (!File.Exists(dest) || new FileInfo(src).Length != new FileInfo(dest).Length)
+					{
+						File.Copy(src, dest, overwrite: true);
+						AndroidFileLog.Info("OpenRA.Bootstrap", "BinDir ← " + name);
+					}
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "BinDir copy " + name + ": " + e.Message);
+				}
+			}
+
+			// Log which Mods.Common is in the domain already
+			foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+			{
+				try
+				{
+					var n = a.GetName().Name;
+					if (n != null && n.StartsWith("OpenRA.Mods", StringComparison.Ordinal))
+						AndroidFileLog.Info("OpenRA.Bootstrap", "Already loaded: " + n + " @ " + (a.Location ?? "(dynamic)"));
+				}
+				catch { /* ignore */ }
 			}
 		}
 
@@ -79,8 +209,8 @@ namespace OpenRA.Android
 				catch (Exception e) { AndroidFileLog.Warn("OpenRA.Bootstrap", "cwd: " + e.Message); }
 
 				AndroidFileLog.Info("OpenRA.Bootstrap", "cwd=" + Directory.GetCurrentDirectory());
+				AndroidFileLog.Info("OpenRA.Bootstrap", "BinDir/BaseDirectory=" + AppDomain.CurrentDomain.BaseDirectory);
 
-				// Ensure GL is current on THIS thread
 				if (!EnsureEglCurrent())
 				{
 					AndroidFileLog.Error("OpenRA.Bootstrap", "Cannot bind EGL — abort engine start");
@@ -127,14 +257,12 @@ namespace OpenRA.Android
 
 			AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent failed: " + AndroidEgl.LastError);
 
-			// Re-create from surface if display was destroyed (e.g. OnPause/SurfaceDestroyed)
 			var surface = boundSurface;
 			if (surface != null)
 			{
 				AndroidFileLog.Info("OpenRA.Bootstrap", "Re-initializing EGL from surface…");
 				try
 				{
-					// SurfaceView.Holder must be used on UI thread typically — try anyway
 					var holder = surface.Holder;
 					var w = Math.Max(1, surface.SurfaceWidth);
 					var h = Math.Max(1, surface.SurfaceHeight);

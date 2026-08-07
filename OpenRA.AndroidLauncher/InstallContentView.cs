@@ -1,4 +1,4 @@
-// Native Install Content UI — official-style dialog + OpenRA chrome background.
+// Native Install Content UI — official dialog + dark faction emblem background.
 
 using System;
 using Android.Content;
@@ -8,6 +8,7 @@ using Android.Util;
 using Android.Views;
 using Android.Widget;
 using AColor = global::Android.Graphics.Color;
+using GPath = Android.Graphics.Path;
 
 namespace OpenRA.Android
 {
@@ -25,24 +26,13 @@ namespace OpenRA.Android
 
 		public InstallContentView(Context context) : base(context)
 		{
-			// Real OpenRA chrome (mods/common-content/chrome.png packaged as install_bg)
-			var bg = new ImageView(context);
-			bg.SetScaleType(ImageView.ScaleType.CenterCrop);
-			try
-			{
-				var id = context.Resources.GetIdentifier("install_bg", "drawable", context.PackageName);
-				if (id != 0)
-					bg.SetImageResource(id);
-			}
-			catch { /* ignore */ }
-			// Subtle darken so dialog stays readable
-			bg.SetColorFilter(new PorterDuffColorFilter(AColor.Argb(120, 0x08, 0x08, 0x0c), PorterDuff.Mode.SrcAtop));
-			AddView(bg, new FrameLayout.LayoutParams(
+			// Official-style dark field with large faded faction marks
+			AddView(new FactionBackdropView(context), new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
 			var card = new LinearLayout(context) { Orientation = Orientation.Vertical };
 			var cardBg = new GradientDrawable();
-			cardBg.SetColor(AColor.Argb(220, 0x1a, 0x1c, 0x14));
+			cardBg.SetColor(AColor.Argb(235, 0x16, 0x18, 0x12));
 			cardBg.SetStroke(Dp(2), AColor.Rgb(0x90, 0x28, 0x18));
 			cardBg.SetCornerRadius(Dp(4));
 			card.Background = cardBg;
@@ -163,5 +153,81 @@ namespace OpenRA.Android
 			(int)TypedValue.ApplyDimension(ComplexUnitType.Dip, value, Resources.DisplayMetrics);
 	}
 
-	
+	/// <summary>Dark backdrop with large faded RA faction marks (official install look).</summary>
+	sealed class FactionBackdropView : View
+	{
+		readonly Paint paint = new() { AntiAlias = true };
+
+		public FactionBackdropView(Context context) : base(context)
+		{
+			SetBackgroundColor(AColor.Rgb(0x0a, 0x0a, 0x0c));
+		}
+
+		protected override void OnDraw(Canvas canvas)
+		{
+			base.OnDraw(canvas);
+			var w = Width;
+			var h = Height;
+			if (w <= 0 || h <= 0)
+				return;
+
+			// Positions roughly matching official shell/content chrome layout
+			DrawEmblem(canvas, w * 0.12f, h * 0.22f, Math.Min(w, h) * 0.16f, AColor.Rgb(0x50, 0x38, 0x10), 0); // eagle-ish
+			DrawEmblem(canvas, w * 0.38f, h * 0.18f, Math.Min(w, h) * 0.14f, AColor.Rgb(0x40, 0x20, 0x28), 1); // hex
+			DrawEmblem(canvas, w * 0.62f, h * 0.20f, Math.Min(w, h) * 0.15f, AColor.Rgb(0x20, 0x28, 0x50), 2); // triangle
+			DrawEmblem(canvas, w * 0.88f, h * 0.22f, Math.Min(w, h) * 0.16f, AColor.Rgb(0x50, 0x18, 0x18), 3); // star
+			DrawEmblem(canvas, w * 0.10f, h * 0.85f, Math.Min(w, h) * 0.18f, AColor.Rgb(0x58, 0x18, 0x18), 3); // star lower
+			DrawEmblem(canvas, w * 0.50f, h * 0.90f, Math.Min(w, h) * 0.12f, AColor.Rgb(0x28, 0x30, 0x28), 1);
+			DrawEmblem(canvas, w * 0.90f, h * 0.82f, Math.Min(w, h) * 0.14f, AColor.Rgb(0x30, 0x28, 0x10), 0);
+		}
+
+		void DrawEmblem(Canvas c, float cx, float cy, float r, AColor color, int kind)
+		{
+			paint.Color = color;
+			paint.Alpha = 70;
+			paint.SetStyle(Paint.Style.Stroke);
+			paint.StrokeWidth = Math.Max(3f, r / 14f);
+
+			var path = new GPath();
+			switch (kind)
+			{
+				case 0: // diamond / eagle stand-in
+					path.MoveTo(cx, cy - r);
+					path.LineTo(cx + r * 0.7f, cy);
+					path.LineTo(cx, cy + r);
+					path.LineTo(cx - r * 0.7f, cy);
+					path.Close();
+					break;
+				case 1: // hex
+					for (var i = 0; i < 6; i++)
+					{
+						var a = (float)(i * Math.PI / 3);
+						var x = cx + r * (float)Math.Cos(a);
+						var y = cy + r * (float)Math.Sin(a);
+						if (i == 0) path.MoveTo(x, y); else path.LineTo(x, y);
+					}
+					path.Close();
+					break;
+				case 2: // triangle
+					path.MoveTo(cx, cy - r);
+					path.LineTo(cx + r * 0.95f, cy + r * 0.7f);
+					path.LineTo(cx - r * 0.95f, cy + r * 0.7f);
+					path.Close();
+					break;
+				default: // 5-point star
+					for (var i = 0; i < 5; i++)
+					{
+						var a = (float)(-Math.PI / 2 + i * 2 * Math.PI / 5);
+						var x = cx + r * (float)Math.Cos(a);
+						var y = cy + r * (float)Math.Sin(a);
+						if (i == 0) path.MoveTo(x, y); else path.LineTo(x, y);
+						var a2 = a + (float)(Math.PI / 5);
+						path.LineTo(cx + r * 0.4f * (float)Math.Cos(a2), cy + r * 0.4f * (float)Math.Sin(a2));
+					}
+					path.Close();
+					break;
+			}
+			c.DrawPath(path, paint);
+		}
+	}
 }

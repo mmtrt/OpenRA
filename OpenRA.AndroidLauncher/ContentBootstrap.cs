@@ -111,13 +111,18 @@ namespace OpenRA.Android
 				? Directory.GetFiles(AssembliesDir, "*.dll")
 				: Array.Empty<string>();
 
-			// Targets the engine actually probes (cwd / SupportDir / FilesDir)
+			// ObjectCreator loads from Platform.BinDir (= AppDomain.BaseDirectory).
+			// Also keep copies under SupportDir for file probes / tooling.
 			var targets = new System.Collections.Generic.List<string> { SupportDir };
 			try
 			{
-				var files = Application.Context.FilesDir?.AbsolutePath;
-				if (!string.IsNullOrEmpty(files) && files != SupportDir)
-					targets.Add(files);
+				var bin = AppDomain.CurrentDomain.BaseDirectory;
+				if (!string.IsNullOrEmpty(bin))
+				{
+					var trimmed = bin.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+					if (!string.Equals(trimmed, SupportDir, StringComparison.Ordinal))
+						targets.Add(trimmed);
+				}
 			}
 			catch { /* ignore */ }
 
