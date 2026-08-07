@@ -65,7 +65,9 @@ namespace OpenRA.Android
 		{
 			ALog.Info("OpenRA.Surface", "SurfaceDestroyed");
 			surfaceReady = false;
-			AndroidEgl.Destroy();
+			// Release current binding but keep display/context if possible — full Destroy
+			// only when activity is finishing (MainActivity.OnDestroy).
+			AndroidEgl.ReleaseCurrent();
 		}
 
 		public bool MakeCurrent() => AndroidEgl.MakeCurrent();

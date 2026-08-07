@@ -1,5 +1,3 @@
-// Bootstrap — SupportDir, assemblies on disk, PlatformFactory, engine start.
-
 using System;
 using System.IO;
 using System.Threading;
@@ -17,25 +15,27 @@ namespace OpenRA.Android
 
 		static Thread gameThread;
 		static int startAttempts;
+		static GameSurfaceView boundSurface;
 
 		public static void Start(GameSurfaceView surface, string mod = "ra")
 		{
 			if (IsRunning)
 				return;
 
+			boundSurface = surface;
+
 			try
 			{
 				AndroidFileLog.Init();
 				AndroidFileLog.Info("OpenRA.Bootstrap", $"Start attempt={++startAttempts} mod={mod}");
 
-				ContentBootstrap.EnsureLayout(null);
+				// Use already-locked SupportDir — do not re-resolve mid-session
+				ContentBootstrap.EnsureLayout(ContentBootstrap.SupportDir ?? StorageAccess.ResolveSupportDir());
 				SupportDir = ContentBootstrap.SupportDir;
 				CacheDir = Path.Combine(SupportDir, "Cache");
 				Directory.CreateDirectory(CacheDir);
 
-				// Ensure DLLs exist where ObjectCreator File.OpenRead looks
 				ContentBootstrap.PlaceAssembliesForLoader();
-
 				AndroidNativeBootstrap.Init();
 
 				Platform.AndroidFilesDir = SupportDir;
@@ -44,7 +44,13 @@ namespace OpenRA.Android
 
 				if (!ContentBootstrap.HasAnyMod())
 				{
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "No mod.yaml under mods/ — not starting engine.");
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "No mod.yaml — not starting.");
+					return;
+				}
+
+				if (surface == null || !surface.IsSurfaceReady)
+				{
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "Surface/EGL not ready — defer start");
 					return;
 				}
 
@@ -68,32 +74,18 @@ namespace OpenRA.Android
 			try
 			{
 				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread enter");
-				AndroidEgl.ReleaseCurrent(); // in case UI thread still held context
 
-				// Critical: assembly names resolve relative to cwd / FilesDir
-				try
-				{
-					Directory.SetCurrentDirectory(SupportDir);
-					AndroidFileLog.Info("OpenRA.Bootstrap", "cwd=" + Directory.GetCurrentDirectory());
-				}
-				catch (Exception e)
-				{
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "SetCurrentDirectory: " + e.Message);
-				}
+				try { Directory.SetCurrentDirectory(SupportDir); }
+				catch (Exception e) { AndroidFileLog.Warn("OpenRA.Bootstrap", "cwd: " + e.Message); }
 
-				ContentBootstrap.PlaceAssembliesForLoader();
+				AndroidFileLog.Info("OpenRA.Bootstrap", "cwd=" + Directory.GetCurrentDirectory());
 
-				if (!AndroidEgl.MakeCurrent())
+				// Ensure GL is current on THIS thread
+				if (!EnsureEglCurrent())
 				{
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent failed: " + AndroidEgl.LastError);
-					System.Threading.Thread.Sleep(50);
-					if (!AndroidEgl.MakeCurrent())
-						AndroidFileLog.Error("OpenRA.Bootstrap", "EGL MakeCurrent retry failed: " + AndroidEgl.LastError);
-					else
-						AndroidFileLog.Info("OpenRA.Bootstrap", "EGL MakeCurrent ok on retry");
+					AndroidFileLog.Error("OpenRA.Bootstrap", "Cannot bind EGL — abort engine start");
+					return;
 				}
-				else
-					AndroidFileLog.Info("OpenRA.Bootstrap", "EGL MakeCurrent ok");
 
 				var versionPath = Path.Combine(SupportDir, "VERSION");
 				if (!File.Exists(versionPath))
@@ -123,6 +115,43 @@ namespace OpenRA.Android
 				IsRunning = false;
 				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread exit");
 			}
+		}
+
+		static bool EnsureEglCurrent()
+		{
+			if (AndroidEgl.MakeCurrent())
+			{
+				AndroidFileLog.Info("OpenRA.Bootstrap", "EGL MakeCurrent ok");
+				return true;
+			}
+
+			AndroidFileLog.Warn("OpenRA.Bootstrap", "EGL MakeCurrent failed: " + AndroidEgl.LastError);
+
+			// Re-create from surface if display was destroyed (e.g. OnPause/SurfaceDestroyed)
+			var surface = boundSurface;
+			if (surface != null)
+			{
+				AndroidFileLog.Info("OpenRA.Bootstrap", "Re-initializing EGL from surface…");
+				try
+				{
+					// SurfaceView.Holder must be used on UI thread typically — try anyway
+					var holder = surface.Holder;
+					var w = Math.Max(1, surface.SurfaceWidth);
+					var h = Math.Max(1, surface.SurfaceHeight);
+					if (AndroidEgl.Initialize(holder, w, h) && AndroidEgl.MakeCurrent())
+					{
+						AndroidFileLog.Info("OpenRA.Bootstrap", "EGL re-init + MakeCurrent ok");
+						return true;
+					}
+					AndroidFileLog.Error("OpenRA.Bootstrap", "EGL re-init failed: " + AndroidEgl.LastError);
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Exception("OpenRA.Bootstrap.EGL", e);
+				}
+			}
+
+			return false;
 		}
 
 		public static void Stop()

@@ -195,7 +195,7 @@ namespace OpenRA.Android
 							ToastLength.Long).Show();
 					}
 				})
-				.SetNeutralButton("All-files access", (s, e) => StorageAccess.RequestAllFilesAccess(this))
+				.SetNeutralButton("All-files access", (s, e) => StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this))
 				.SetNegativeButton("OK", (s, e) => { })
 				.Show();
 		}
@@ -311,7 +311,7 @@ namespace OpenRA.Android
 				.SetMessage(
 					"To use /storage/emulated/0/OpenRA (survives uninstall), grant All files access.\n\n" +
 					"Without it, data stays under Android/data/net.openra.android/files/OpenRA.")
-				.SetPositiveButton("Open settings", (s, e) => StorageAccess.RequestAllFilesAccess(this))
+				.SetPositiveButton("Open settings", (s, e) => StorageAccess.PreferPublicOnNextLaunch(); StorageAccess.RequestAllFilesAccess(this))
 				.SetNegativeButton("Use app folder", (s, e) => { })
 				.Show();
 		}
