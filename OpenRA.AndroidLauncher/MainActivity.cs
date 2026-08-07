@@ -104,8 +104,6 @@ namespace OpenRA.Android
 				ContentBootstrap.EnsureLayout(null);
 				var support = ContentBootstrap.SupportDir;
 				AndroidFileLog.Info("OpenRA.Main", "SupportDir=" + support);
-				if (StorageAccess.ShouldPromptAllFiles())
-					OfferAllFilesAccessOnce();
 
 				if (ContentProbe.IsBaseContentInstalled(support))
 				{
@@ -220,11 +218,6 @@ namespace OpenRA.Android
 							ToastLength.Long).Show();
 					}
 				})
-				.SetNeutralButton("All-files access", (s, e) =>
-				{
-					StorageAccess.PreferPublicOnNextLaunch();
-					StorageAccess.RequestAllFilesAccess(this);
-				})
 				.SetNegativeButton("OK", (s, e) => { })
 				.Show();
 		}
@@ -325,17 +318,6 @@ namespace OpenRA.Android
 			catch { /* ignore */ }
 			AndroidFileLog.Info("OpenRA.Main", "OnResume");
 
-			// If user just granted all-files, switch SupportDir to public + migrate content
-			if (StorageAccess.HasAllFilesAccess())
-			{
-				var prev = ContentBootstrap.SupportDir;
-				var promoted = StorageAccess.TryPromoteToPublic();
-				if (promoted != prev && !string.IsNullOrEmpty(promoted))
-				{
-					ContentBootstrap.EnsureLayout(promoted);
-					AndroidFileLog.Info("OpenRA.Main", "SupportDir after promote=" + ContentBootstrap.SupportDir);
-				}
-			}
 			if (installView != null && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
 			{
 				HideInstallUi();
@@ -350,34 +332,6 @@ namespace OpenRA.Android
 			}
 		}
 
-		bool allFilesPromptShown;
-		void OfferAllFilesAccessOnce()
-		{
-			if (allFilesPromptShown)
-				return;
-			allFilesPromptShown = true;
-			try
-			{
-				new AlertDialog.Builder(this)
-					.SetTitle("Storage access")
-					.SetMessage(
-						"To keep game data in /storage/emulated/0/OpenRA (survives uninstall), " +
-						"grant All files access.\n\n" +
-						"Without it the game uses app-private storage (slower on some devices, removed with the app).")
-					.SetPositiveButton("Open settings", (s, e) =>
-					{
-						StorageAccess.PreferPublicOnNextLaunch();
-						StorageAccess.RequestAllFilesAccess(this);
-					})
-					.SetNegativeButton("Use app folder", (s, e) => StorageAccess.MarkAskedAllFiles())
-					.Show();
-			}
-			catch (Exception e)
-			{
-				AndroidFileLog.Warn("OpenRA.Main", "All-files dialog: " + e.Message);
-			}
-		}
-
 		void RequestStorageIfNeeded()
 		{
 			if ((int)Build.VERSION.SdkInt >= 30)
@@ -385,7 +339,7 @@ namespace OpenRA.Android
 				try
 				{
 					if (!AEnv.IsExternalStorageManager)
-						AndroidFileLog.Warn("OpenRA.Main", "All-files access not granted; may fall back to app storage");
+						AndroidFileLog.Info("OpenRA.Main", "Using app-private storage only");
 				}
 				catch { /* ignore */ }
 				return;

@@ -66,61 +66,15 @@ namespace OpenRA.Android
 				AndroidFileLog.Info("OpenRA.Content", "Assets already present — skip full extract");
 			}
 
-			MigrateContentFromAppExternalIfNeeded();
 			PlaceAssembliesForLoader();
 			LogTree();
 		}
 
 
 
-		/// <summary>
-		/// If SupportDir is public OpenRA but MIX files only exist under app-external, copy once.
-		/// </summary>
-		static void MigrateContentFromAppExternalIfNeeded()
-		{
-			try
-			{
-				if (ContentProbe.IsBaseContentInstalled(SupportDir))
-					return;
 
-				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
-				if (string.IsNullOrEmpty(ext))
-					return;
-				var oldRoot = Path.Combine(ext, "OpenRA");
-				if (oldRoot == SupportDir)
-					return;
-				if (!ContentProbe.IsBaseContentInstalled(oldRoot))
-					return;
 
-				AndroidFileLog.Info("OpenRA.Content", "Migrating Content from " + oldRoot + " → " + SupportDir);
-				var src = Path.Combine(oldRoot, "Content");
-				var dst = Path.Combine(SupportDir, "Content");
-				if (Directory.Exists(src))
-					CopyDir(src, dst);
-			}
-			catch (Exception e)
-			{
-				AndroidFileLog.Warn("OpenRA.Content", "Migrate: " + e.Message);
-			}
-		}
-
-		static void CopyDir(string src, string dst)
-		{
-			Directory.CreateDirectory(dst);
-			foreach (var dir in Directory.GetDirectories(src, "*", SearchOption.AllDirectories))
-			{
-				var rel = Path.GetRelativePath(src, dir);
-				Directory.CreateDirectory(Path.Combine(dst, rel));
-			}
-			foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
-			{
-				var rel = Path.GetRelativePath(src, file);
-				var dest = Path.Combine(dst, rel);
-				Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-				if (!File.Exists(dest) || new FileInfo(dest).Length == 0)
-					File.Copy(file, dest, overwrite: true);
-			}
-		}
+		
 
 
 		static void TryExtractRootFile(string assetName, string destPath)
@@ -144,44 +98,60 @@ namespace OpenRA.Android
 
 		public static void PlaceAssembliesForLoader()
 		{
-			if (!Directory.Exists(AssembliesDir))
-				return;
-
-			string[] targets =
+			// Stage from Assets/assemblies → SupportDir root (where ObjectCreator loads),
+			// then remove the assemblies/ staging folder so we do not keep a dual tree.
+			var stage = AssembliesDir;
+			if (!Directory.Exists(stage))
 			{
-				SupportDir,
-				Application.Context.FilesDir?.AbsolutePath,
-				Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? "", "OpenRA"),
-			};
+				// Also accept DLLs already extracted under SupportDir
+				stage = SupportDir;
+			}
 
-			foreach (var dll in Directory.GetFiles(AssembliesDir, "*.dll"))
+			string[] sources = Directory.Exists(AssembliesDir)
+				? Directory.GetFiles(AssembliesDir, "*.dll")
+				: Array.Empty<string>();
+
+			// Targets the engine actually probes (cwd / SupportDir / FilesDir)
+			var targets = new System.Collections.Generic.List<string> { SupportDir };
+			try
+			{
+				var files = Application.Context.FilesDir?.AbsolutePath;
+				if (!string.IsNullOrEmpty(files) && files != SupportDir)
+					targets.Add(files);
+			}
+			catch { /* ignore */ }
+
+			foreach (var dll in sources)
 			{
 				var name = Path.GetFileName(dll);
 				foreach (var dir in targets)
 				{
-					if (string.IsNullOrEmpty(dir)) continue;
 					try
 					{
 						Directory.CreateDirectory(dir);
 						var dest = Path.Combine(dir, name);
 						if (!SameFile(dll, dest))
+						{
 							File.Copy(dll, dest, overwrite: true);
+							AndroidFileLog.Info("OpenRA.Content", "Assembly → " + dest);
+						}
 					}
 					catch { /* ignore */ }
 				}
+			}
 
-				foreach (var modId in new[] { "common", "ra", "cnc", "d2k" })
+			// Drop staging directory — game does not load from assemblies/
+			try
+			{
+				if (Directory.Exists(AssembliesDir))
 				{
-					var modDir = Path.Combine(ModsDir, modId);
-					if (!Directory.Exists(modDir)) continue;
-					try
-					{
-						var dest = Path.Combine(modDir, name);
-						if (!SameFile(dll, dest))
-							File.Copy(dll, dest, overwrite: true);
-					}
-					catch { /* ignore */ }
+					Directory.Delete(AssembliesDir, recursive: true);
+					AndroidFileLog.Info("OpenRA.Content", "Cleared staging assemblies/");
 				}
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Content", "Could not clear assemblies/: " + e.Message);
 			}
 		}
 
