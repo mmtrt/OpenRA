@@ -17,8 +17,6 @@ namespace OpenRA.Android
 		public static string GlslDir => Path.Combine(SupportDir, "glsl");
 		public static string AssembliesDir => Path.Combine(SupportDir, "assemblies");
 
-		static bool publicPathWarned;
-
 		public static void EnsureLayout(string preferredSupportDir = null)
 		{
 			SupportDir = preferredSupportDir ?? ResolveSupportDir();

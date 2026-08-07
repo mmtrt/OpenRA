@@ -403,7 +403,7 @@ jobs:
           mkdir -p "$ASSETS/mods" "$ASSETS/glsl" "$ASSETS/assemblies" "$ASSETS/Content"
 
           # --- mods (YAML/chrome/rules; not original MIX data) ---
-          for mod in common ra cnc d2k; do
+          for mod in common common-content ra ra-content cnc d2k; do
             if [ -d "mods/$mod" ]; then
               echo "Packaging mods/$mod"
               rm -rf "$ASSETS/mods/$mod"
@@ -488,6 +488,41 @@ jobs:
               fi
             done
           done
+
+
+          # Explicit AppImage-derived dependency names (in case output layout differs)
+          for dep in \
+            TagLibSharp.dll MP3Sharp.dll NVorbis.dll Pfim.dll DiscordRPC.dll \
+            BeaconLib.dll rix0rrr.BeaconLib.dll FuzzyLogicLibrary.dll \
+            ICSharpCode.SharpZipLib.dll Mono.Nat.dll Newtonsoft.Json.dll \
+            Linguini.Bundle.dll Linguini.Shared.dll Linguini.Syntax.dll \
+            Microsoft.Extensions.DependencyModel.dll Eluant.dll
+          do
+            if [ ! -f "$ASSETS/assemblies/$dep" ]; then
+              found=$(find . -path ./OpenRA.AndroidLauncher -prune -o -name "$dep" -print 2>/dev/null | head -1 || true)
+              if [ -n "$found" ]; then
+                cp -f "$found" "$ASSETS/assemblies/"
+                echo "Dep fill $dep <- $found"
+              fi
+            fi
+          done
+
+          # global mix database if present
+          for gmdb in "global mix database.dat" "./global mix database.dat"; do
+            if [ -f "$gmdb" ]; then
+              cp -f "$gmdb" "$ASSETS/"
+              echo "Packaged global mix database.dat"
+            fi
+          done
+          find . -name 'global mix database.dat' 2>/dev/null | head -1 | while read -r f; do
+            cp -f "$f" "$ASSETS/" 2>/dev/null || true
+          done
+
+          echo "=== assemblies dir ==="
+          ls -la "$ASSETS/assemblies" || true
+          test -f "$ASSETS/assemblies/TagLibSharp.dll" || echo "WARNING: TagLibSharp.dll still missing"
+          test -f "$ASSETS/assemblies/OpenRA.Mods.Common.dll" || { echo "ERROR: Mods.Common missing"; exit 1; }
+
 
           echo "android-port-dev" > "$ASSETS/VERSION"
 
