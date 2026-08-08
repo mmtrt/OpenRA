@@ -74,6 +74,50 @@ namespace OpenRA.Platforms.Android
 		}
 	}
 
+	static class GlDiagnostics
+	{
+		static readonly HashSet<string> LoggedContexts = new();
+		static readonly object Gate = new();
+
+		/// <summary>
+		/// Checks glGetError() and logs (once per distinct context+error combination, so a
+		/// per-frame repeating error cannot flood the log at 60fps) any error found. This is
+		/// purely additive — it never changes GL state or rendering behavior — added because
+		/// nothing in this file previously checked glGetError() at all (aside from one
+		/// glCheckFramebufferStatus call), so a state error anywhere upstream (bad attribute
+		/// setup, an unbound/incomplete texture, a rejected uniform type, ...) could silently
+		/// leave every subsequent draw call a no-op while Present() kept "succeeding" every
+		/// frame — exactly the black-screen-with-no-errors-visible symptom being chased here.
+		/// </summary>
+		public static void Check(string context)
+		{
+			var err = GLES20.GlGetError();
+			if (err == GLES20.GlNoError)
+				return;
+
+			var key = context + ":0x" + err.ToString("X");
+			lock (Gate)
+			{
+				if (!LoggedContexts.Add(key))
+					return;
+			}
+
+			AndroidPlatformLog.Error("OpenRA.GL.Error", $"{context}: glGetError=0x{err:X} ({GlErrorName(err)})");
+		}
+
+		static string GlErrorName(int err) => err switch
+		{
+			0x0500 => "GL_INVALID_ENUM",
+			0x0501 => "GL_INVALID_VALUE",
+			0x0502 => "GL_INVALID_OPERATION",
+			0x0503 => "GL_STACK_OVERFLOW",
+			0x0504 => "GL_STACK_UNDERFLOW",
+			0x0505 => "GL_OUT_OF_MEMORY",
+			0x0506 => "GL_INVALID_FRAMEBUFFER_OPERATION",
+			_ => "UNKNOWN"
+		};
+	}
+
 	sealed class AndroidGraphicsContext : IGraphicsContext
 	{
 		int vao;
@@ -104,6 +148,9 @@ namespace OpenRA.Platforms.Android
 			GLES30.GlGenVertexArrays(1, ids, 0);
 			vao = ids[0];
 			GLES30.GlBindVertexArray(vao);
+			GlDiagnostics.Check("TryInitVao (GenVertexArrays/BindVertexArray)");
+			if (vao == 0)
+				AndroidPlatformLog.Error("OpenRA.GL", "TryInitVao: glGenVertexArrays returned 0 — no VAO bound");
 		}
 
 		public void Clear()
@@ -111,6 +158,7 @@ namespace OpenRA.Platforms.Android
 			TryInitVao();
 			GLES20.GlClearColor(0, 0, 0, 1);
 			GLES20.GlClear(GLES20.GlColorBufferBit | GLES20.GlDepthBufferBit);
+			GlDiagnostics.Check("Clear");
 		}
 
 		public void ClearDepthBuffer() => GLES20.GlClear(GLES20.GlDepthBufferBit);
@@ -150,6 +198,7 @@ namespace OpenRA.Platforms.Android
 			var w = Math.Max(1, AndroidEgl.SurfaceWidth);
 			var h = Math.Max(1, AndroidEgl.SurfaceHeight);
 			GLES20.GlViewport(0, 0, w, h);
+			GlDiagnostics.Check("Present (BindFramebuffer/Viewport)");
 
 			AndroidEgl.SwapBuffers();
 			presentCount++;
@@ -207,10 +256,16 @@ namespace OpenRA.Platforms.Android
 		};
 
 		public void DrawPrimitives(PrimitiveType pt, int firstVertex, int numVertices)
-			=> GLES20.GlDrawArrays(ModeFromPrimitiveType(pt), firstVertex, numVertices);
+		{
+			GLES20.GlDrawArrays(ModeFromPrimitiveType(pt), firstVertex, numVertices);
+			GlDiagnostics.Check("DrawPrimitives(" + pt + ", first=" + firstVertex + ", n=" + numVertices + ")");
+		}
 
 		public void DrawElements(int numIndices, int offset)
-			=> GLES20.GlDrawElements(GLES20.GlTriangles, numIndices, GLES20.GlUnsignedInt, offset);
+		{
+			GLES20.GlDrawElements(GLES20.GlTriangles, numIndices, GLES20.GlUnsignedInt, offset);
+			GlDiagnostics.Check("DrawElements(n=" + numIndices + ", offset=" + offset + ")");
+		}
 
 		public IVertexBuffer<T> CreateEmptyVertexBuffer<T>(int size) where T : struct
 			=> new AndroidVertexBuffer<T>(size);
@@ -251,6 +306,7 @@ namespace OpenRA.Platforms.Android
 			buffer = ids[0];
 			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
 			GLES20.GlBufferData(GLES20.GlArrayBuffer, size * elementSize, null, GLES20.GlDynamicDraw);
+			GlDiagnostics.Check("VertexBuffer(empty, size=" + size + ")");
 		}
 
 		public AndroidVertexBuffer(T[] data, bool dynamic)
@@ -271,6 +327,7 @@ namespace OpenRA.Platforms.Android
 			var bb = GlesBuffers.ToByteBuffer(vertices, length, elementSize);
 			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
 			GLES20.GlBufferData(GLES20.GlArrayBuffer, length * elementSize, bb, usage);
+			GlDiagnostics.Check("VertexBuffer.SetData(length=" + length + ")");
 		}
 
 		public void SetData(ref T[] vertices, int length) => SetData(vertices, length);
@@ -366,6 +423,9 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMagFilter, GLES20.GlLinear);
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureWrapS, GLES20.GlClampToEdge);
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureWrapT, GLES20.GlClampToEdge);
+			GlDiagnostics.Check("Texture.EnsureTexture (GenTextures)");
+			if (texture == 0)
+				AndroidPlatformLog.Error("OpenRA.GL", "EnsureTexture: glGenTextures returned 0");
 		}
 
 		public void SetData(byte[] colors, int width, int height)
@@ -376,6 +436,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
 			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
 				GLES20.GlRgba, GLES20.GlUnsignedByte, bb);
+			GlDiagnostics.Check("Texture.SetData " + width + "x" + height + " textureId=" + texture);
 		}
 
 		public void SetFloatData(float[] data, int width, int height)
@@ -615,12 +676,14 @@ namespace OpenRA.Platforms.Android
 				else
 					GLES30.GlVertexAttribIPointer(i, attribute.Components, (int)attribute.Type,
 						bindings.Stride, attribute.Offset);
+				GlDiagnostics.Check("Shader.Bind attrib[" + i + "]=" + attribute.Name);
 			}
 		}
 
 		public void PrepareRender()
 		{
 			GLES20.GlUseProgram(program);
+			GlDiagnostics.Check("Shader.PrepareRender (UseProgram program=" + program + ")");
 			textureUnit = 0;
 		}
 
@@ -677,6 +740,9 @@ namespace OpenRA.Platforms.Android
 			var id = (t as AndroidTexture)?.TextureId ?? 0;
 			GLES20.GlBindTexture(GLES20.GlTexture2d, id);
 			GLES20.GlUniform1i(loc, unit);
+			GlDiagnostics.Check("Shader.SetTexture(" + param + ") unit=" + unit + " textureId=" + id);
+			if (id == 0)
+				AndroidPlatformLog.Warn("OpenRA.GL", "SetTexture(" + param + "): binding texture id 0 (t=" + (t == null ? "null" : t.GetType().Name) + ")");
 		}
 
 		public void SetMatrix(string param, float[] mtx)

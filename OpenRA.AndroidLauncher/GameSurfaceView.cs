@@ -22,7 +22,24 @@ namespace OpenRA.Android
 		void InitHolder()
 		{
 			Holder.AddCallback(this);
-			Holder.SetFormat(AndroidFormat.Rgba8888);
+
+			// CRITICAL: PixelFormat.Opaque, not Rgba8888. The EGL config below still
+			// requests an alpha channel (EglAlphaSize=8) because the game's own renderer
+			// wants it for internal blending — but that is a separate concern from what
+			// format we tell SurfaceFlinger to composite this SurfaceView with. Setting
+			// Rgba8888 here (an alpha-bearing format) at the *window* level tells
+			// SurfaceFlinger this surface is translucent, so it alpha-blends every
+			// rendered frame against whatever is behind it — the Activity window
+			// background, which defaults to black. Any pixel our renderer doesn't leave
+			// at exactly alpha=1.0 (trivially easy for a 2D sprite renderer doing normal
+			// alpha blending) then gets blended toward black by the compositor, on top of
+			// otherwise-100%-successful GL rendering and EGL swaps. This is the textbook
+			// cause of "renders every frame with no errors, but the screen is black".
+			// PixelFormat.Opaque tells SurfaceFlinger to ignore the alpha channel for
+			// compositing purposes and treat the surface as fully opaque, which is what a
+			// full-screen game surface should be regardless of what the EGL config itself
+			// requests for internal use.
+			Holder.SetFormat(AndroidFormat.Opaque);
 			Focusable = true;
 			FocusableInTouchMode = true;
 			KeepScreenOn = true;
