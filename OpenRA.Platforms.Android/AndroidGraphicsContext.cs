@@ -323,28 +323,48 @@ namespace OpenRA.Platforms.Android
 
 		public void SetData(T[] vertices, int length)
 		{
-			var usage = dynamic ? GLES20.GlDynamicDraw : GLES20.GlStaticDraw;
-			var bb = GlesBuffers.ToByteBuffer(vertices, length, elementSize);
-			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
-			GLES20.GlBufferData(GLES20.GlArrayBuffer, length * elementSize, bb, usage);
-			GlDiagnostics.Check("VertexBuffer.SetData(length=" + length + ")");
+			SetData(vertices, 0, 0, length);
 		}
 
-		public void SetData(ref T[] vertices, int length) => SetData(vertices, length);
+		public void SetData(ref T[] vertices, int length) => SetData(vertices, 0, 0, length);
 
+		/// <summary>
+		/// Desktop semantics: offset = source array index, start = GPU buffer index.
+		/// </summary>
 		public void SetData(T[] vertices, int offset, int start, int length)
 		{
-			var bb = GlesBuffers.ToByteBuffer(vertices, start + length, elementSize);
-			// sub-data from element 'start'
-			var slice = ByteBuffer.AllocateDirect(length * elementSize);
-			slice.Order(ByteOrder.NativeOrder());
-			var tmp = new byte[length * elementSize];
-			bb.Position(start * elementSize);
-			bb.Get(tmp);
-			slice.Put(tmp);
-			slice.Position(0);
+			if (vertices == null || length <= 0)
+				return;
+
 			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
-			GLES20.GlBufferSubData(GLES20.GlArrayBuffer, offset * elementSize, length * elementSize, slice);
+
+			var byteLen = length * elementSize;
+			var handle = GCHandle.Alloc(vertices, GCHandleType.Pinned);
+			try
+			{
+				var src = handle.AddrOfPinnedObject() + offset * elementSize;
+				var tmp = new byte[byteLen];
+				Marshal.Copy(src, tmp, 0, byteLen);
+				var bb = ByteBuffer.AllocateDirect(byteLen);
+				bb.Order(ByteOrder.NativeOrder());
+				bb.Put(tmp);
+				bb.Position(0);
+
+				if (start == 0 && offset == 0 && length == vertices.Length)
+				{
+					var usage = dynamic ? GLES20.GlDynamicDraw : GLES20.GlStaticDraw;
+					GLES20.GlBufferData(GLES20.GlArrayBuffer, byteLen, bb, usage);
+				}
+				else
+				{
+					GLES20.GlBufferSubData(GLES20.GlArrayBuffer, start * elementSize, byteLen, bb);
+				}
+				GlDiagnostics.Check("VertexBuffer.SetData(off=" + offset + ",start=" + start + ",len=" + length + ")");
+			}
+			finally
+			{
+				handle.Free();
+			}
 		}
 
 		public void Dispose()
