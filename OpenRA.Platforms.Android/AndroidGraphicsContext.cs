@@ -691,28 +691,55 @@ namespace OpenRA.Platforms.Android
 		{
 			var loc = Uniform(name);
 			if (loc >= 0)
+			{
+				// Mirrors the desktop reference implementation (OpenRA.Platforms.Default/
+				// Shader.cs): glUniform* requires THIS shader's program to be the
+				// currently-bound one, or the driver raises GL_INVALID_OPERATION and the
+				// uniform silently keeps its old/default value — which for a sampler
+				// uniform means every subsequent draw samples texture unit 0 regardless of
+				// what texture was actually intended, i.e. exactly the "renders every
+				// frame with no visible content" symptom. PrepareRender() calls
+				// glUseProgram once per draw batch, but uniform setters can be called
+				// interleaved with a DIFFERENT shader's setters in between (this port has
+				// multiple "combined" program instances), so each setter must not assume
+				// its own program is still current.
+				GLES20.GlUseProgram(program);
 				GLES20.GlUniform1i(loc, value ? 1 : 0);
+				GlDiagnostics.Check("Shader.SetBool(" + name + ")");
+			}
 		}
 
 		public void SetVec(string name, float x)
 		{
 			var loc = Uniform(name);
 			if (loc >= 0)
+			{
+				GLES20.GlUseProgram(program);
 				GLES20.GlUniform1f(loc, x);
+				GlDiagnostics.Check("Shader.SetVec(" + name + ", 1)");
+			}
 		}
 
 		public void SetVec(string name, float x, float y)
 		{
 			var loc = Uniform(name);
 			if (loc >= 0)
+			{
+				GLES20.GlUseProgram(program);
 				GLES20.GlUniform2f(loc, x, y);
+				GlDiagnostics.Check("Shader.SetVec(" + name + ", 2)");
+			}
 		}
 
 		public void SetVec(string name, float x, float y, float z)
 		{
 			var loc = Uniform(name);
 			if (loc >= 0)
+			{
+				GLES20.GlUseProgram(program);
 				GLES20.GlUniform3f(loc, x, y, z);
+				GlDiagnostics.Check("Shader.SetVec(" + name + ", 3)");
+			}
 		}
 
 		public void SetVec(string name, ReadOnlyMemory<float> vec, int length)
@@ -720,6 +747,7 @@ namespace OpenRA.Platforms.Android
 			var loc = Uniform(name);
 			if (loc < 0)
 				return;
+			GLES20.GlUseProgram(program);
 			var arr = vec.Span.Slice(0, Math.Min(length, vec.Length)).ToArray();
 			switch (length)
 			{
@@ -728,6 +756,8 @@ namespace OpenRA.Platforms.Android
 				case 3: GLES20.GlUniform3fv(loc, 1, arr, 0); break;
 				default: GLES20.GlUniform4fv(loc, Math.Max(1, length / 4), arr, 0); break;
 			}
+
+			GlDiagnostics.Check("Shader.SetVec(" + name + ", n=" + length + ")");
 		}
 
 		public void SetTexture(string param, ITexture t)
@@ -735,6 +765,14 @@ namespace OpenRA.Platforms.Android
 			var loc = Uniform(param);
 			if (loc < 0)
 				return;
+
+			// See SetBool above for why this is required here: unlike the desktop backend,
+			// this method binds the texture and sets the sampler uniform immediately
+			// rather than deferring to PrepareRender(), so it must independently guarantee
+			// its own program is current rather than relying on a prior PrepareRender()
+			// call still being in effect.
+			GLES20.GlUseProgram(program);
+
 			var unit = textureUnit++;
 			GLES20.GlActiveTexture(GLES20.GlTexture0 + unit);
 			var id = (t as AndroidTexture)?.TextureId ?? 0;
@@ -749,7 +787,11 @@ namespace OpenRA.Platforms.Android
 		{
 			var loc = Uniform(param);
 			if (loc >= 0)
+			{
+				GLES20.GlUseProgram(program);
 				GLES20.GlUniformMatrix4fv(loc, 1, false, mtx, 0);
+				GlDiagnostics.Check("Shader.SetMatrix(" + param + ")");
+			}
 		}
 	}
 
