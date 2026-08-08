@@ -404,6 +404,39 @@ namespace OpenRA
 			return string.Join(j, ts);
 		}
 
+		// NOTE: These deliberately live in the OpenRA namespace rather than relying on
+		// System.Collections.Immutable's own System.Linq.ImmutableArrayExtensions.All/.Any.
+		// On some Android runtimes, System.Linq.Enumerable.All()/.Any() internally
+		// fast-paths to those specialized ImmutableArray<T> overloads, and that
+		// specialized implementation can be missing/version-mismatched relative to what
+		// OpenRA was compiled against, producing a MissingMethodException at startup
+		// (observed in ModContent-related widget logic).
+		//
+		// C# extension-method lookup searches enclosing namespaces before file-level
+		// `using` imports, so — because every OpenRA.* namespace is nested under OpenRA —
+		// these overloads transparently take priority over System.Linq's version for
+		// ImmutableArray<T> receivers everywhere in the codebase, while leaving
+		// .All()/.Any() on every other collection type (List<T>, arrays, IEnumerable<T>,
+		// Dictionary<K,V>, ...) completely unaffected, since those calls don't match this
+		// signature and fall through to the normal Enumerable overloads as usual.
+		public static bool All<T>(this ImmutableArray<T> array, Func<T, bool> predicate)
+		{
+			foreach (var item in array)
+				if (!predicate(item))
+					return false;
+
+			return true;
+		}
+
+		public static bool Any<T>(this ImmutableArray<T> array, Func<T, bool> predicate)
+		{
+			foreach (var item in array)
+				if (predicate(item))
+					return true;
+
+			return false;
+		}
+
 		public static IEnumerable<T> Append<T>(this IEnumerable<T> ts, params T[] moreTs)
 		{
 			return ts.Concat(moreTs);
