@@ -37,7 +37,21 @@ namespace OpenRA.Mods.Common
 
 			public bool IsInstalled()
 			{
-				return TestFiles.All(file => File.Exists(Path.GetFullPath(Platform.ResolvePath(file))));
+				// NOTE: Deliberately a manual loop, not `TestFiles.All(...)`. On some
+				// Android runtimes, System.Linq.Enumerable.All() internally fast-paths to
+				// System.Collections.Immutable's specialized ImmutableArrayExtensions.All
+				// whenever the source is still ImmutableArray<T>-shaped, and that
+				// specialized overload can be missing/version-mismatched relative to what
+				// was compiled against, producing a MissingMethodException at runtime.
+				// Plain iteration only relies on ImmutableArray<T>'s own struct enumerator
+				// (not a LINQ extension), which is not affected by that mismatch.
+				foreach (var file in TestFiles)
+				{
+					if (!File.Exists(Path.GetFullPath(Platform.ResolvePath(file))))
+						return false;
+				}
+
+				return true;
 			}
 		}
 
