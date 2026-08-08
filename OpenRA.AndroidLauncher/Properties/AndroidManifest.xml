@@ -9,13 +9,16 @@
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+  <!-- Do NOT set android:name here. [Application] on OpenRAApplication registers the
+       correct generated type. A hand-written ".OpenRAApplication" causes ClassNotFoundException
+       at process start → instant exit with zero managed logs. -->
   <application
-      android:name=".OpenRAApplication"
       android:allowBackup="true"
       android:icon="@mipmap/appicon"
       android:label="@string/app_name"
       android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
       android:extractNativeLibs="true"
       android:isGame="true"
-      android:hardwareAccelerated="true" />
+      android:hardwareAccelerated="true"
+      android:largeHeap="true" />
 </manifest>

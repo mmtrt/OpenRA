@@ -296,36 +296,49 @@ namespace OpenRA.Android
 		/// log channels the desktop engine uses (plus "android"). All launcher /
 		/// platform diagnostics then go through OpenRA.Support.Log → SupportDir/Logs/.
 		/// </summary>
+		static int officialLoggingInited;
+
 		public static void InitOfficialLogging(string supportDir)
 		{
+			// Idempotent — MainActivity + EngineBootstrap.Start both call this.
+			if (System.Threading.Interlocked.CompareExchange(ref officialLoggingInited, 0, 0) == 1)
+				return;
+
 			try
 			{
+				BootLog.Init();
 				if (string.IsNullOrEmpty(supportDir))
+				{
+					BootLog.Warn("InitOfficialLogging: supportDir empty");
 					return;
+				}
 
 				var dir = supportDir;
 				if (dir[^1] != Path.DirectorySeparatorChar && dir[^1] != Path.AltDirectorySeparatorChar)
 					dir += Path.DirectorySeparatorChar;
 
+				// OverrideSupportDir requires the directory to already exist.
+				Directory.CreateDirectory(dir);
 				Directory.CreateDirectory(Path.Combine(dir, "Logs"));
+				BootLog.Info("InitOfficialLogging dir=" + dir);
 
 				// Must run before any Platform.SupportDir access (Log.AddChannel uses it).
 				try
 				{
 					Platform.OverrideSupportDir(dir);
-					AndroidFileLog.Info("OpenRA.Bootstrap", "Platform.OverrideSupportDir → " + dir);
+					BootLog.Info("Platform.OverrideSupportDir OK");
 				}
 				catch (InvalidOperationException ioe)
 				{
-					// Already initialized (e.g. second Start attempt) — keep existing path.
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "OverrideSupportDir: " + ioe.Message);
+					BootLog.Warn("OverrideSupportDir: " + ioe.Message);
 				}
 				catch (Exception e)
 				{
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "OverrideSupportDir failed: " + e.Message);
+					BootLog.Error("OverrideSupportDir failed: " + e);
+					// Cannot use official Log without SupportDir — stay on BootLog/logcat.
+					return;
 				}
 
-				// Channels match Game.Initialize; AddChannel is a no-op if already present.
 				TryAddChannel("android", "android.log", timestamped: true);
 				TryAddChannel("debug", "debug.log", timestamped: false);
 				TryAddChannel("graphics", "graphics.log", timestamped: false);
@@ -339,12 +352,25 @@ namespace OpenRA.Android
 				AppDomain.CurrentDomain.UnhandledException -= OnUnhandled;
 				AppDomain.CurrentDomain.UnhandledException += OnUnhandled;
 
-				Log.Write("android", "Official logging ready SupportDir=" + dir);
-				Log.Write("debug", "Android bootstrap logging channels open");
+				try
+				{
+					Log.Write("android", "Official logging ready SupportDir=" + dir);
+					Log.Write("debug", "Android bootstrap logging channels open");
+				}
+				catch (Exception e)
+				{
+					BootLog.Warn("Log.Write after AddChannel: " + e.Message);
+				}
+
+				System.Threading.Interlocked.Exchange(ref officialLoggingInited, 1);
+				BootLog.Info("InitOfficialLogging complete");
 			}
 			catch (Exception e)
 			{
-				AndroidFileLog.Warn("OpenRA.Bootstrap", "InitOfficialLogging: " + e.Message);
+				try { BootLog.Exception("InitOfficialLogging", e); }
+				catch { /* ignore */ }
+				try { AndroidFileLog.Warn("OpenRA.Bootstrap", "InitOfficialLogging: " + e.Message); }
+				catch { /* ignore */ }
 			}
 		}
 
@@ -353,10 +379,13 @@ namespace OpenRA.Android
 			try
 			{
 				Log.AddChannel(name, file, timestamped);
+				BootLog.Info("AddChannel " + name + " → " + file);
 			}
 			catch (Exception e)
 			{
-				AndroidFileLog.Warn("OpenRA.Bootstrap", "AddChannel " + name + ": " + e.Message);
+				BootLog.Warn("AddChannel " + name + ": " + e.Message);
+				try { AndroidFileLog.Warn("OpenRA.Bootstrap", "AddChannel " + name + ": " + e.Message); }
+				catch { /* ignore */ }
 			}
 		}
 

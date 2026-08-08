@@ -1,13 +1,13 @@
 #region Copyright & License Information
 /*
- * Platform-layer logging. Always mirrors to Android logcat.
- * Once EngineBootstrap calls MarkEngineLogReady(), lines also go through
- * OpenRA.Log (official SupportDir/Logs/*.log channels).
+ * Platform-layer logging. Always logcat.
+ * After MarkEngineLogReady(), also OpenRA.Log → SupportDir/Logs/*.log
+ * All OpenRA.Log access is behind reflection-free but try/catch TypeLoadException
+ * so a broken Game assembly cannot take down the process during logging.
  */
 #endregion
 
 using System;
-using OpenRA;
 using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
@@ -15,18 +15,15 @@ namespace OpenRA.Platforms.Android
 	public static class AndroidPlatformLog
 	{
 		static volatile bool engineLogReady;
+		static volatile bool engineLogBroken;
 
-		/// <summary>
-		/// Call after Platform.OverrideSupportDir + Log.AddChannel for android/debug/graphics.
-		/// </summary>
 		public static void MarkEngineLogReady() => engineLogReady = true;
 
-		public static bool IsEngineLogReady => engineLogReady;
+		public static bool IsEngineLogReady => engineLogReady && !engineLogBroken;
 
 		public static void Info(string tag, string message) => Write("INFO", tag, message);
 		public static void Warn(string tag, string message) => Write("WARN", tag, message);
 		public static void Error(string tag, string message) => Write("ERROR", tag, message);
-
 		public static void Exception(string tag, Exception ex)
 			=> Error(tag, ex?.ToString() ?? "null exception");
 
@@ -35,7 +32,6 @@ namespace OpenRA.Platforms.Android
 			message ??= "";
 			tag ??= "OpenRA";
 
-			// Always logcat (visible without pulling SupportDir files)
 			try
 			{
 				if (level == "ERROR")
@@ -47,31 +43,31 @@ namespace OpenRA.Platforms.Android
 			}
 			catch { /* ignore */ }
 
-			if (!engineLogReady)
+			if (!engineLogReady || engineLogBroken)
 				return;
 
 			try
 			{
+				// OpenRA.Log is in namespace OpenRA (OpenRA.Game assembly).
 				var channel = ChannelForTag(tag);
 				var line = level == "INFO"
-					? $"[{tag}] {message}"
-					: $"[{level}] [{tag}] {message}";
-				Log.Write(channel, line);
+					? "[" + tag + "] " + message
+					: "[" + level + "] [" + tag + "] " + message;
+				global::OpenRA.Log.Write(channel, line);
 			}
 			catch (Exception e)
 			{
-				try { ALog.Warn("OpenRA.Log", "Log.Write failed: " + e.Message); }
+				engineLogBroken = true;
+				try { ALog.Warn("OpenRA.Log", "Disabling engine Log mirror: " + e.GetType().Name + ": " + e.Message); }
 				catch { /* ignore */ }
 			}
 		}
 
-		/// <summary>Map Android tags onto official engine log channels.</summary>
 		static string ChannelForTag(string tag)
 		{
 			if (string.IsNullOrEmpty(tag))
 				return "android";
 
-			// graphics.log — GL / EGL / shaders / Present
 			if (tag.Contains("EGL", StringComparison.OrdinalIgnoreCase)
 			    || tag.Contains("GL", StringComparison.OrdinalIgnoreCase)
 			    || tag.Contains("Graphics", StringComparison.OrdinalIgnoreCase)
@@ -79,19 +75,16 @@ namespace OpenRA.Platforms.Android
 			    || tag.Contains("Surface", StringComparison.OrdinalIgnoreCase))
 				return "graphics";
 
-			// sound.log
 			if (tag.Contains("Sound", StringComparison.OrdinalIgnoreCase)
 			    || tag.Contains("Audio", StringComparison.OrdinalIgnoreCase)
 			    || tag.Contains("OpenAL", StringComparison.OrdinalIgnoreCase))
 				return "sound";
 
-			// debug.log — native libs, bootstrap diagnostics
 			if (tag.Contains("Native", StringComparison.OrdinalIgnoreCase)
 			    || tag.Contains("Bootstrap", StringComparison.OrdinalIgnoreCase)
 			    || tag.Contains("Crash", StringComparison.OrdinalIgnoreCase))
 				return "debug";
 
-			// android.log — launcher UI, content install, general
 			return "android";
 		}
 	}

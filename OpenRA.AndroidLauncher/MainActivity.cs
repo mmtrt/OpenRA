@@ -41,6 +41,8 @@ namespace OpenRA.Android
 
 			try
 			{
+				BootLog.Init();
+				BootLog.Info("MainActivity.OnCreate begin");
 				AndroidFileLog.Init();
 				AndroidFileLog.Info("OpenRA.Main", "OnCreate begin");
 
@@ -123,6 +125,7 @@ namespace OpenRA.Android
 			}
 			catch (Exception e)
 			{
+				try { BootLog.Exception("MainActivity.OnCreate", e); } catch { /* ignore */ }
 				try { AndroidFileLog.Exception("OpenRA.Main.OnCreate", e); }
 				catch { ALog.Error("OpenRA", "OnCreate fatal: " + e); }
 

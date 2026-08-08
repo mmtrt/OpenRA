@@ -1,4 +1,5 @@
-// Custom Application — earliest process hooks (logcat only until SupportDir + Log channels exist).
+// Custom Application — earliest process hooks.
+// Uses BootLog only (no OpenRA.Game types) so ClassNotFound / early failures still leave a file.
 
 using System;
 using System.Threading.Tasks;
@@ -8,7 +9,7 @@ using OpenRA.Platforms.Android;
 
 namespace OpenRA.Android
 {
-	[Application(AllowBackup = true, HardwareAccelerated = true, LargeHeap = true)]
+	[Application]
 	public class OpenRAApplication : Application
 	{
 		public OpenRAApplication(IntPtr javaReference, JniHandleOwnership transfer)
@@ -22,9 +23,8 @@ namespace OpenRA.Android
 
 			try
 			{
-				// Before Platform.OverrideSupportDir, only logcat is available.
-				AndroidPlatformLog.Info("OpenRA.App",
-					"OpenRAApplication.OnCreate pid=" + global::Android.OS.Process.MyPid());
+				BootLog.Init();
+				BootLog.Info("OpenRAApplication.OnCreate pid=" + global::Android.OS.Process.MyPid());
 
 				AppDomain.CurrentDomain.UnhandledException += (_, args) =>
 				{
@@ -34,8 +34,8 @@ namespace OpenRA.Android
 						var text = ex != null
 							? ex.ToString()
 							: (args.ExceptionObject != null ? args.ExceptionObject.ToString() : "unknown");
-						AndroidPlatformLog.Error("OpenRA.Crash",
-							"UnhandledException isTerminating=" + args.IsTerminating + " " + text);
+						BootLog.Error("UnhandledException isTerminating=" + args.IsTerminating + " " + text);
+						AndroidPlatformLog.Error("OpenRA.Crash", text);
 					}
 					catch { /* ignore */ }
 				};
@@ -44,7 +44,7 @@ namespace OpenRA.Android
 				{
 					try
 					{
-						AndroidPlatformLog.Error("OpenRA.Crash", "UnobservedTaskException " + args.Exception);
+						BootLog.Error("UnobservedTaskException " + args.Exception);
 						args.SetObserved();
 					}
 					catch { /* ignore */ }
@@ -54,11 +54,12 @@ namespace OpenRA.Android
 				{
 					try
 					{
-						AndroidPlatformLog.Error("OpenRA.Crash",
-							"AndroidEnvironment exception " + args.Exception);
+						BootLog.Error("AndroidEnvironment exception " + args.Exception);
 					}
 					catch { /* ignore */ }
 				};
+
+				BootLog.Info("Crash hooks installed");
 			}
 			catch (Exception e)
 			{
