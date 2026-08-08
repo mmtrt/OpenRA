@@ -13,10 +13,12 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- User builds with PublishTrimmed=true; preserve reflection/LINQ via descriptor. -->
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>partial</TrimMode>
-    <!-- Do NOT set AndroidLinkMode=None — breaks CompressAssemblies (missing System.Core.dll). -->
+    <!-- CRITICAL: PublishTrimmed=true strips BCL methods OpenRA needs when loading MIX/rules
+         via dynamically loaded OpenRA.Mods.*.dll (MissingMethodException:
+         MemoryExtensions.ToUpperInvariant, Array.Copy(long), Enumerable.Max, …).
+         That makes every content|*.mix Mount fail → content installer loop forever.
+         Keep false until a full trimmer descriptor covers OpenRA + System.Memory/Runtime. -->
+    <PublishTrimmed>false</PublishTrimmed>
     <RunAOTCompilation>false</RunAOTCompilation>
     <OpenRAAndroid>true</OpenRAAndroid>
   </PropertyGroup>
@@ -50,9 +52,13 @@
   </ItemGroup>
 
   <!-- Preserve LINQ + OpenRA APIs used via reflection / dynamically loaded mod DLLs. -->
+  <!-- Used only if PublishTrimmed is forced true (-p:PublishTrimmed=true). -->
   <ItemGroup>
     <TrimmerRootDescriptor Include="Platforms\Android\trimming.xml" />
-    <!-- RootMode required by Microsoft.Android.Sdk.ILLink (MSB4096 without it). -->
     <TrimmerRootAssembly Include="System.Linq" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Memory" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Runtime" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Runtime.Extensions" RootMode="All" />
+    <TrimmerRootAssembly Include="System.Collections" RootMode="All" />
   </ItemGroup>
 </Project>

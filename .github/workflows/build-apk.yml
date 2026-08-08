@@ -500,7 +500,7 @@ jobs:
             /p:OpenRAAndroid=true \
             -p:RuntimeIdentifier=${{ env.RID }} \
             -p:AndroidPackageFormat=apk \
-            -p:PublishTrimmed=true \
+            -p:PublishTrimmed=false \
             -p:RunAOTCompilation=false \
             -o "$OUT_DIR" \
             --verbosity minimal
