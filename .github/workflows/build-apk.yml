@@ -362,6 +362,50 @@ jobs:
           echo "Restoring launcher ..."
           dotnet restore "${LAUNCHER_CSPROJ}" /p:OpenRAAndroid=true --verbosity minimal
 
+          # OpenRA.Mods.Common / OpenRA.Mods.Cnc are loaded reflectively at runtime (not
+          # project-referenced by the launcher), so they must be built for net10.0-android
+          # themselves. The "Cache MSBuild intermediates (obj)" step above restores a
+          # cached obj/ for these projects across runs, and GitHub Actions cache restores
+          # reset file timestamps — which can fool MSBuild's incremental up-to-date check
+          # into reusing a stale project.assets.json from a previous net10.0 (desktop)
+          # restore instead of re-resolving for net10.0-android. That mismatch compiles
+          # cleanly but pulls in a different reference-assembly version of framework types
+          # like System.Collections.Immutable than what's actually bundled at runtime,
+          # producing "MissingMethodException: Method not found" for things like
+          # System.Linq.ImmutableArrayExtensions.All at startup. Apply the same
+          # clear-then-force-restore-then-verify treatment used for OpenRA.Game above.
+          for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc; do
+            if [ ! -f "$proj/$proj.csproj" ]; then
+              echo "WARNING: $proj/$proj.csproj not found — skip restore"
+              continue
+            fi
+
+            if [ -d "$proj/obj" ]; then
+              echo "Clearing $proj/obj to avoid stale TFM assets ..."
+              rm -rf "$proj/obj"
+            fi
+
+            echo "Restoring $proj for net10.0-android (OpenRAAndroid=true) ..."
+            dotnet restore "$proj/$proj.csproj" \
+              /p:OpenRAAndroid=true \
+              --force \
+              --verbosity minimal
+
+            ASSETS="$proj/obj/project.assets.json"
+            if [ -f "$ASSETS" ]; then
+              if grep -q "net10.0-android" "$ASSETS"; then
+                echo "OK: $ASSETS contains net10.0-android"
+              else
+                echo "ERROR: $ASSETS missing net10.0-android target"
+                grep -E "target|net10" "$ASSETS" | head -40 || true
+                exit 1
+              fi
+            else
+              echo "ERROR: $ASSETS was not created"
+              exit 1
+            fi
+          done
+
       - name: Build Engine
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
@@ -392,10 +436,15 @@ jobs:
           for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc; do
             if [ -f "$proj/$proj.csproj" ]; then
               echo "=== Building $proj ($CONFIG, net10.0-android) ==="
+              # --no-restore: the Restore step already force-restored this project for
+              # net10.0-android and verified project.assets.json reflects it. Letting
+              # `dotnet build` do its own implicit restore here risks re-triggering the
+              # timestamp/up-to-date heuristic that caused the staleness in the first place.
               dotnet build "$proj/$proj.csproj" \
                 -c "$CONFIG" \
                 /p:OpenRAAndroid=true \
                 /p:CopyLocalLockFileAssemblies=true \
+                --no-restore \
                 --verbosity minimal
             else
               echo "Skip missing $proj"
