@@ -88,9 +88,22 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 		void CheckRequiredContentInstalled()
 		{
-			requiredContentInstalled = content.Packages
-				.Where(p => p.Value.Required)
-				.All(p => p.Value.TestFiles.All(f => File.Exists(Platform.ResolvePath(f))));
+			// NOTE: Deliberately manual loops, not `.Where(...).All(...)` — LINQ over an
+			// ImmutableArray<T> source (content.Packages, TestFiles) can throw
+			// MissingMethodException on some Android runtimes; see ModContentLogic for
+			// details.
+			requiredContentInstalled = true;
+			foreach (var p in content.Packages)
+			{
+				if (!p.Value.Required)
+					continue;
+
+				if (!p.Value.IsInstalled())
+				{
+					requiredContentInstalled = false;
+					break;
+				}
+			}
 		}
 	}
 }
