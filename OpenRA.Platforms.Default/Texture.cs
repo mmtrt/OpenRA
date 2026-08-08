@@ -72,8 +72,11 @@ namespace OpenRA.Platforms.Default
 		void SetData(IntPtr data, int width, int height)
 		{
 			PrepareTexture();
-			// Always RGBA8 internal; BGRA only as pixel format (byte order of OpenRA sprites).
-			OpenGL.glTexImage2D(OpenGL.GL_TEXTURE_2D, 0, OpenGL.GL_RGBA8, width, height,
+			var glInternalFormat = OpenGL.Profile == GLProfile.Embedded
+			? OpenGL.GL_BGRA8_EXT
+			: OpenGL.GL_RGBA8;
+
+			OpenGL.glTexImage2D(OpenGL.GL_TEXTURE_2D, 0, glInternalFormat, width, height,
 								0, OpenGL.GL_BGRA, OpenGL.GL_UNSIGNED_BYTE, data);
 			OpenGL.CheckGLError();
 		}
@@ -119,7 +122,12 @@ namespace OpenRA.Platforms.Default
 
 			PrepareTexture();
 
-			OpenGL.glCopyTexImage2D(OpenGL.GL_TEXTURE_2D, 0, OpenGL.GL_RGBA8, rect.X, rect.Y, rect.Width, rect.Height, 0);
+			var glInternalFormat = OpenGL.Profile == GLProfile.Embedded
+			? OpenGL.GL_BGRA8_EXT
+			: OpenGL.GL_RGBA8;
+
+			OpenGL.glCopyTexImage2D(OpenGL.GL_TEXTURE_2D, 0, glInternalFormat,
+									rect.X, rect.Y, rect.Width, rect.Height, 0);
 			OpenGL.CheckGLError();
 		}
 

@@ -128,6 +128,7 @@ namespace OpenRA.Platforms.Default
 		public const int GL_RGBA = 0x1908;
 		public const int GL_BGRA = 0x80E1;
 		public const int GL_RGBA8 = 0x8058;
+		public const int GL_BGRA8_EXT = 0x93A1;
 		public const int GL_CLAMP_TO_EDGE = 0x812F;
 		public const int GL_TEXTURE_BASE_LEVEL = 0x813C;
 		public const int GL_TEXTURE_MAX_LEVEL = 0x813D;
