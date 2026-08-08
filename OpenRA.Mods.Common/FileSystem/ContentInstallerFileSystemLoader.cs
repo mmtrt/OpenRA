@@ -9,6 +9,8 @@
  */
 #endregion
 
+using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 
@@ -82,29 +84,34 @@ namespace OpenRA.Mods.Common.FileSystem
 					}
 					catch (Exception e)
 					{
-						// Optional packages (~prefix) already handled by the engine; required ones:
+						// Optional packages (~prefix): ignore mount failure.
 						var key = kv.Key ?? "";
 						if (key.StartsWith("~", StringComparison.Ordinal))
 							continue;
 
-						// Android: if the file/dir exists under SupportDir, treat as available.
-						// Strip "content|" prefix → path relative to Content/ra/v2.
+						// Soft-OK when the file/dir exists under SupportDir (Android path/VFS edge cases).
+						// Strip "content|" (or other) prefix → path relative to Content/ra/v2.
 						var relative = key;
 						var pipe = relative.IndexOf('|');
 						if (pipe >= 0)
-							relative = relative[(pipe + 1)..];
+							relative = relative.Substring(pipe + 1);
 						if (relative.StartsWith("~", StringComparison.Ordinal))
-							relative = relative[1..];
+							relative = relative.Substring(1);
 
-						var onDisk = Path.Combine(Platform.SupportDir, "Content", "ra", "v2",
-												  relative.Replace('/', Path.DirectorySeparatorChar));
+						var onDisk = Path.Combine(
+							Platform.SupportDir,
+							"Content",
+							"ra",
+							"v2",
+							relative.Replace('/', Path.DirectorySeparatorChar));
+
 						if (File.Exists(onDisk) || Directory.Exists(onDisk))
 						{
-							Log.Write("debug", $"Content mount soft-OK (on disk): {key} → {onDisk}");
+							Log.Write("debug", "Content mount soft-OK (on disk): " + key + " → " + onDisk);
 							continue;
 						}
 
-						Log.Write("debug", $"Content mount failed: {key}: {e.Message}");
+						Log.Write("debug", "Content mount failed: " + key + ": " + e.Message);
 						isContentAvailable = false;
 					}
 				}
