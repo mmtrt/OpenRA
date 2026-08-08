@@ -96,9 +96,16 @@ namespace OpenRA.Platforms.Android
 
 		public void ClearFrame()
 		{
-			mouseQueue.Clear();
-			zoomQueue.Clear();
-			panQueue.Clear();
+			// Must take the same lock as Enqueue/Drain* — Queue<T> isn't thread-safe, and a
+			// lock only protects a resource if every access path uses it. This was the one
+			// remaining unlocked touch of these queues; left as-is it reintroduces the exact
+			// race the Drain*/queueLock changes elsewhere in this file were fixing.
+			lock (queueLock)
+			{
+				mouseQueue.Clear();
+				zoomQueue.Clear();
+				panQueue.Clear();
+			}
 		}
 
 		public void OnTouchDown(int id, int x, int y, long timeMs)
