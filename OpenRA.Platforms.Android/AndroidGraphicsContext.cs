@@ -687,6 +687,28 @@ namespace OpenRA.Platforms.Android
 			textureUnit = 0;
 		}
 
+		// Set once per distinct shader "program" instance (this port has two independent
+		// "combined" program objects — Renderer.SpriteRenderer for UI/chrome and
+		// Renderer.WorldSpriteRenderer for the game world — so logging must be keyed by
+		// program, not just by uniform name, or we'd only ever see the first instance's
+		// values). Used only for the Palette/PaletteRows uniforms specifically: these are
+		// what drive whether a paletted sprite (terrain, units, buildings — basically the
+		// entire visible game world) samples real color data or ends up black, so if the
+		// world renders black while UI/effects render fine, this is the first place to look.
+		static readonly HashSet<string> LoggedPaletteUniforms = new();
+
+		void LogPaletteUniformOnce(string name, string detail)
+		{
+			var key = program + ":" + name;
+			lock (LoggedPaletteUniforms)
+			{
+				if (!LoggedPaletteUniforms.Add(key))
+					return;
+			}
+
+			AndroidPlatformLog.Info("OpenRA.GL.Palette", "program=" + program + " " + name + ": " + detail);
+		}
+
 		public void SetBool(string name, bool value)
 		{
 			var loc = Uniform(name);
@@ -712,6 +734,8 @@ namespace OpenRA.Platforms.Android
 		public void SetVec(string name, float x)
 		{
 			var loc = Uniform(name);
+			if (name == "PaletteRows")
+				LogPaletteUniformOnce(name, "loc=" + loc + " value=" + x);
 			if (loc >= 0)
 			{
 				GLES20.GlUseProgram(program);
@@ -781,6 +805,11 @@ namespace OpenRA.Platforms.Android
 			GlDiagnostics.Check("Shader.SetTexture(" + param + ") unit=" + unit + " textureId=" + id);
 			if (id == 0)
 				AndroidPlatformLog.Warn("OpenRA.GL", "SetTexture(" + param + "): binding texture id 0 (t=" + (t == null ? "null" : t.GetType().Name) + ")");
+			if (param == "Palette")
+			{
+				var texSize = (t as AndroidTexture)?.Size ?? default;
+				LogPaletteUniformOnce(param, "loc=" + loc + " unit=" + unit + " textureId=" + id + " size=" + texSize.Width + "x" + texSize.Height);
+			}
 		}
 
 		public void SetMatrix(string param, float[] mtx)
