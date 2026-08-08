@@ -212,6 +212,7 @@ namespace OpenRA.Platforms.Android
 	sealed class AndroidGraphicsContext : IGraphicsContext
 	{
 		int vao;
+		static AndroidGraphicsContext live;
 
 		public string GLVersion
 		{
@@ -226,6 +227,7 @@ namespace OpenRA.Platforms.Android
 
 		public AndroidGraphicsContext()
 		{
+			live = this;
 			TryInitVao();
 		}
 
@@ -362,6 +364,12 @@ namespace OpenRA.Platforms.Android
 			TryInitVao();
 			if (vao != 0)
 				GLES30.GlBindVertexArray(vao);
+		}
+
+		/// <summary>Shader.Bind must record attrib pointers while the context VAO is bound.</summary>
+		public static void BindVaoForAttributes()
+		{
+			live?.EnsureVaoBound();
 		}
 
 		public void DrawPrimitives(PrimitiveType pt, int firstVertex, int numVertices)
@@ -531,13 +539,18 @@ namespace OpenRA.Platforms.Android
 			set
 			{
 				scaleFilter = value;
-				if (texture == 0)
-					return;
-				var filter = scaleFilter == TextureScaleFilter.Linear ? GLES20.GlLinear : GLES20.GlNearest;
-				GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-				GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMinFilter, filter);
-				GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMagFilter, filter);
+				ApplyScaleFilter();
 			}
+		}
+
+		void ApplyScaleFilter()
+		{
+			if (texture == 0)
+				return;
+			var filter = scaleFilter == TextureScaleFilter.Linear ? GLES20.GlLinear : GLES20.GlNearest;
+			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
+			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMinFilter, filter);
+			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMagFilter, filter);
 		}
 
 		public int TextureId
@@ -590,6 +603,15 @@ namespace OpenRA.Platforms.Android
 			}
 			else
 				GlDiagnostics.Check("Texture.SetData BGRA " + width + "x" + height + " textureId=" + texture);
+
+			// Palette sheets are 256×N; linear filtering interpolates indices → noisy unit sprites.
+			if (width == 256)
+			{
+				scaleFilter = TextureScaleFilter.Nearest;
+				ApplyScaleFilter();
+			}
+			else
+				ApplyScaleFilter();
 		}
 
 		public void SetFloatData(float[] data, int width, int height)
@@ -840,21 +862,48 @@ namespace OpenRA.Platforms.Android
 			return loc;
 		}
 
+		static bool loggedAttribLayout;
 		public void Bind()
 		{
-			// Called with the vertex buffer already bound — set attrib pointers (desktop Shader.Bind).
+			// GLES3: attrib pointers are VAO state. Bind our VAO before setting pointers
+			// so a later DrawElements VAO bind does not restore empty attribute state.
+			AndroidGraphicsContext.BindVaoForAttributes();
+
 			if (bindings == null || bindings.Attributes == null)
 				return;
+
+			if (!loggedAttribLayout)
+			{
+				loggedAttribLayout = true;
+				var desc = "stride=" + bindings.Stride;
+				for (var i = 0; i < bindings.Attributes.Length; i++)
+				{
+					var a = bindings.Attributes[i];
+					desc += " | [" + i + "] " + a.Name + " type=0x" + ((int)a.Type).ToString("X")
+						+ " n=" + a.Components + " off=" + a.Offset;
+				}
+				AndroidPlatformLog.Info("OpenRA.GL.Attrib", desc);
+			}
+
 			for (var i = 0; i < bindings.Attributes.Length; i++)
 			{
 				var attribute = bindings.Attributes[i];
 				GLES20.GlEnableVertexAttribArray(i);
 				if (attribute.Type == ShaderVertexAttributeType.Float)
+				{
+					// Last arg = byte offset into currently bound ARRAY_BUFFER (desktop: new IntPtr(offset)).
 					GLES20.GlVertexAttribPointer(i, attribute.Components, GLES20.GlFloat, false,
 						bindings.Stride, attribute.Offset);
+				}
 				else
-					GLES30.GlVertexAttribIPointer(i, attribute.Components, (int)attribute.Type,
+				{
+					// UInt = 0x1405 GL_UNSIGNED_INT — packs palette channel flags.
+					var glType = attribute.Type == ShaderVertexAttributeType.UInt
+						? GLES30.GlUnsignedInt
+						: GLES30.GlInt;
+					GLES30.GlVertexAttribIPointer(i, attribute.Components, glType,
 						bindings.Stride, attribute.Offset);
+				}
 				GlDiagnostics.Check("Shader.Bind attrib[" + i + "]=" + attribute.Name);
 			}
 		}
