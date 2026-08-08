@@ -26,7 +26,14 @@ namespace OpenRA.Platforms.Android
 
 		public static bool IsReady
 		{
-			get { lock (Gate) return initialized && surface != null && surface != EGL14.EglNoSurface && context != null && context != EGL14.EglNoContext; }
+			get
+			{
+				lock (Gate)
+					return initialized
+						&& display != null && display != EGL14.EglNoDisplay
+						&& surface != null && surface != EGL14.EglNoSurface
+						&& context != null && context != EGL14.EglNoContext;
+			}
 		}
 
 		public static int SurfaceWidth { get; private set; }
@@ -45,13 +52,13 @@ namespace OpenRA.Platforms.Android
 
 					display = EGL14.EglGetDisplay(EGL14.EglDefaultDisplay);
 					if (display == null || display == EGL14.EglNoDisplay)
-						return Fail("eglGetDisplay failed");
+						return FailHard("eglGetDisplay failed");
 
 					var version = new int[2];
 					if (!EGL14.EglInitialize(display, version, 0, version, 1))
-						return Fail("eglInitialize failed: " + EglError());
+						return FailHard("eglInitialize failed: " + EglError());
 
-					AndroidPlatformLog.Info("OpenRA.EGL", $"EGL {version[0]}.{version[1]}");
+					AndroidPlatformLog.Info("OpenRA.EGL", "EGL " + version[0] + "." + version[1]);
 
 					int[] attribList =
 					{
@@ -85,61 +92,120 @@ namespace OpenRA.Platforms.Android
 						};
 						if (!EGL14.EglChooseConfig(display, attribList, 0, configs, 0, configs.Length, numConfigs, 0)
 						    || numConfigs[0] == 0)
-							return Fail("eglChooseConfig failed: " + EglError());
+							return FailHard("eglChooseConfig failed: " + EglError());
 					}
 
 					config = configs[0];
 
-					int[] ctxAttribs = { EglContextClientVersion, 3, EGL14.EglNone };
+					int[] ctxAttribs =
+					{
+						EglContextClientVersion, 3,
+						EGL14.EglNone
+					};
 					context = EGL14.EglCreateContext(display, config, EGL14.EglNoContext, ctxAttribs, 0);
 					if (context == null || context == EGL14.EglNoContext)
 					{
 						ctxAttribs = new[] { EglContextClientVersion, 2, EGL14.EglNone };
 						context = EGL14.EglCreateContext(display, config, EGL14.EglNoContext, ctxAttribs, 0);
 						if (context == null || context == EGL14.EglNoContext)
-							return Fail("eglCreateContext failed: " + EglError());
+							return FailHard("eglCreateContext failed: " + EglError());
 					}
 
 					if (!CreateWindowSurfaceUnlocked(holder))
-						return false;
+						return FailHard("eglCreateWindowSurface failed: " + LastError);
 
-					// Leave unbound after init so the game thread can MakeCurrent cleanly
+					// Leave unbound so the game thread can MakeCurrent.
 					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
 
 					initialized = true;
 					LastError = "";
-					AndroidPlatformLog.Info("OpenRA.EGL", $"ready {SurfaceWidth}x{SurfaceHeight} (unbound for game thread)");
+					AndroidPlatformLog.Info("OpenRA.EGL", "ready " + SurfaceWidth + "x" + SurfaceHeight + " (unbound for game thread)");
 					return true;
 				}
 				catch (Exception e)
 				{
-					return Fail("Exception: " + e);
+					return FailHard("Exception: " + e);
 				}
 			}
 		}
 
+		/// <summary>
+		/// Recreate the window surface only when size changes or the surface is gone.
+		/// Never tear down display/context on a transient create failure (that caused
+		/// endless "MakeCurrent: no display" after eglCreateWindowSurface 0x3003).
+		/// </summary>
 		public static bool Resize(ISurfaceHolder holder, int width, int height)
 		{
 			lock (Gate)
 			{
-				if (!initialized)
+				width = Math.Max(1, width);
+				height = Math.Max(1, height);
+
+				if (!initialized
+				    || display == null || display == EGL14.EglNoDisplay
+				    || context == null || context == EGL14.EglNoContext
+				    || config == null)
 					return Initialize(holder, width, height);
 
-				SurfaceWidth = Math.Max(1, width);
-				SurfaceHeight = Math.Max(1, height);
-
-				if (surface != null && surface != EGL14.EglNoSurface)
+				// Same size + live surface → no-op (SurfaceChanged often fires spuriously).
+				if (width == SurfaceWidth && height == SurfaceHeight
+				    && surface != null && surface != EGL14.EglNoSurface)
 				{
-					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
-					EGL14.EglDestroySurface(display, surface);
-					surface = EGL14.EglNoSurface;
+					AndroidPlatformLog.Info("OpenRA.EGL", "Resize no-op " + width + "x" + height);
+					return true;
 				}
 
-				if (!CreateWindowSurfaceUnlocked(holder))
+				SurfaceWidth = width;
+				SurfaceHeight = height;
+
+				try
+				{
+					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
+
+					if (surface != null && surface != EGL14.EglNoSurface)
+					{
+						EGL14.EglDestroySurface(display, surface);
+						surface = EGL14.EglNoSurface;
+					}
+
+					if (!CreateWindowSurfaceUnlocked(holder))
+					{
+						// Soft fail: keep display + context so a later SurfaceCreated can recover.
+						AndroidPlatformLog.Error("OpenRA.EGL",
+							"Resize: create surface failed (keeping context): " + LastError);
+						return false;
+					}
+
+					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
+					AndroidPlatformLog.Info("OpenRA.EGL", "Resize OK " + width + "x" + height);
+					return true;
+				}
+				catch (Exception e)
+				{
+					AndroidPlatformLog.Error("OpenRA.EGL", "Resize exception: " + e.Message);
 					return false;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Soft destroy: drop the window surface only (SurfaceDestroyed). Keep display/context
+		/// so SurfaceCreated can reattach without a full re-init.
+		/// </summary>
+		public static void DestroySurfaceOnly()
+		{
+			lock (Gate)
+			{
+				if (display == null || display == EGL14.EglNoDisplay)
+					return;
 
 				EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
-				return true;
+				if (surface != null && surface != EGL14.EglNoSurface)
+				{
+					EGL14.EglDestroySurface(display, surface);
+					surface = EGL14.EglNoSurface;
+					AndroidPlatformLog.Info("OpenRA.EGL", "Surface destroyed (context kept)");
+				}
 			}
 		}
 
@@ -162,7 +228,6 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
-		/// <summary>Release context from the current thread (call on UI before game thread owns GL).</summary>
 		public static void ReleaseCurrent()
 		{
 			lock (Gate)
@@ -192,20 +257,26 @@ namespace OpenRA.Platforms.Android
 		{
 			var nativeWindow = holder?.Surface;
 			if (nativeWindow == null)
-				return Fail("SurfaceHolder.Surface is null");
+			{
+				LastError = "SurfaceHolder.Surface is null";
+				return false;
+			}
 
 			int[] surfaceAttribs = { EGL14.EglNone };
 			surface = EGL14.EglCreateWindowSurface(display, config, nativeWindow, surfaceAttribs, 0);
 			if (surface == null || surface == EGL14.EglNoSurface)
-				return Fail("eglCreateWindowSurface failed: " + EglError());
+			{
+				LastError = "eglCreateWindowSurface failed: " + EglError();
+				surface = EGL14.EglNoSurface;
+				return false;
+			}
+
+			LastError = "";
 			return true;
 		}
 
 		static void DestroyUnlocked()
 		{
-			if (display != null && display == EGL14.EglNoDisplay)
-				return;
-
 			if (display != null && display != EGL14.EglNoDisplay)
 			{
 				EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
@@ -223,7 +294,7 @@ namespace OpenRA.Platforms.Android
 			initialized = false;
 		}
 
-		static bool Fail(string message)
+		static bool FailHard(string message)
 		{
 			LastError = message;
 			AndroidPlatformLog.Error("OpenRA.EGL", message);
@@ -234,10 +305,11 @@ namespace OpenRA.Platforms.Android
 		static bool FailKeep(string message)
 		{
 			LastError = message;
+			// Rate-limit MakeCurrent spam
 			AndroidPlatformLog.Error("OpenRA.EGL", message);
 			return false;
 		}
 
-		static string EglError() => $"0x{EGL14.EglGetError():X}";
+		static string EglError() => "0x" + EGL14.EglGetError().ToString("X");
 	}
 }

@@ -31,20 +31,26 @@ namespace OpenRA.Android
 		public void SurfaceCreated(ISurfaceHolder holder)
 		{
 			AndroidFileLog.Info("OpenRA.Surface", "SurfaceCreated");
-			var w = Width > 0 ? Width : 1280;
-			var h = Height > 0 ? Height : 720;
+			var w = Width > 0 ? Width : Math.Max(1, SurfaceWidth > 0 ? SurfaceWidth : 1280);
+			var h = Height > 0 ? Height : Math.Max(1, SurfaceHeight > 0 ? SurfaceHeight : 720);
 			SurfaceWidth = w;
 			SurfaceHeight = h;
 
-			if (AndroidEgl.Initialize(holder, w, h))
+			// Prefer soft re-attach if display/context still alive.
+			bool ok;
+			if (AndroidEgl.IsReady)
+				ok = true;
+			else
+				ok = AndroidEgl.Initialize(holder, w, h) || AndroidEgl.Resize(holder, w, h);
+
+			surfaceReady = ok && AndroidEgl.IsReady;
+			if (surfaceReady)
 			{
-				surfaceReady = true;
 				AndroidFileLog.Info("OpenRA.Surface", "EGL ready " + w + "x" + h);
 				SurfaceReady?.Invoke();
 			}
 			else
 			{
-				surfaceReady = false;
 				AndroidFileLog.Error("OpenRA.Surface", "EGL init failed: " + AndroidEgl.LastError);
 			}
 		}
@@ -54,6 +60,7 @@ namespace OpenRA.Android
 			AndroidFileLog.Info("OpenRA.Surface", "SurfaceChanged " + width + "x" + height);
 			SurfaceWidth = width;
 			SurfaceHeight = height;
+
 			if (!AndroidEgl.Resize(holder, width, height))
 				AndroidFileLog.Error("OpenRA.Surface", "EGL resize failed: " + AndroidEgl.LastError);
 			else
@@ -64,9 +71,8 @@ namespace OpenRA.Android
 		{
 			AndroidFileLog.Info("OpenRA.Surface", "SurfaceDestroyed");
 			surfaceReady = false;
-			// Release current binding but keep display/context if possible — full Destroy
-			// only when activity is finishing (MainActivity.OnDestroy).
-			AndroidEgl.ReleaseCurrent();
+			// Drop window surface only — keep GL context for fast resume.
+			AndroidEgl.DestroySurfaceOnly();
 		}
 
 		public bool MakeCurrent() => AndroidEgl.MakeCurrent();

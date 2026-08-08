@@ -48,16 +48,32 @@ namespace OpenRA.Platforms.Android
 					catch (Exception e) { AndroidPlatformLog.Warn("OpenRA.Native", "AssemblyLoad resolver: " + e.Message); }
 				};
 
-				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-					AttachResolver(asm);
+				// Enumerate carefully — some runtime assemblies throw TypeLoadException
+				// ("Recursive type definition detected .<>O") when inspected.
+				try
+				{
+					foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+					{
+						try { AttachResolver(asm); }
+						catch (TypeLoadException tle)
+						{ AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolver TypeLoad: " + tle.Message); }
+						catch (Exception e)
+						{ AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolver: " + e.Message); }
+					}
+				}
+				catch (Exception e)
+				{
+					AndroidPlatformLog.Warn("OpenRA.Native", "GetAssemblies loop: " + e.Message);
+				}
 
-				// Prefer the name Eluant requests. Also load dotted form if packaged that way.
+				// Always attempt native loads even if resolver attach partially failed.
 				Load("lua51");
 				Load("lua5.1");
 				Load("openal");
 				Load("freetype");
 
 				ListNativeDir();
+				AndroidPlatformLog.Info("OpenRA.Native", "Init complete");
 			}
 			catch (Exception e)
 			{
@@ -89,9 +105,13 @@ namespace OpenRA.Platforms.Android
 
 			string name;
 			try { name = asm.GetName().Name ?? ""; }
-			catch { return; }
+			catch (Exception) { return; }
 
-			if (string.IsNullOrEmpty(name) || !ResolvedAssemblies.Add(name))
+			// Skip compiler/runtime synthetic assemblies that throw TypeLoadException.
+			if (string.IsNullOrEmpty(name) || name.StartsWith("<>", StringComparison.Ordinal) || name == "Anonymously Hosted DynamicMethods Assembly")
+				return;
+
+			if (!ResolvedAssemblies.Add(name))
 				return;
 
 			try
