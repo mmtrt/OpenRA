@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  OpenRA.Mods.* is loaded dynamically from SupportDir assets — static linker never sees
+  call sites into System.Linq used by those DLLs. Without roots, PublishTrimmed strips
+  Enumerable.Max<T>(IEnumerable<T>, Func<T,int>) → MissingMethodException in HitShapeInfo.
+  Do NOT list OpenRA.Mods.Common here (IL2007 — not a compile-time reference of the launcher).
+  Do NOT list System.Core (facade; missing after link → XACAS7028).
+-->
+<linker>
+  <assembly fullname="System.Linq">
+    <type fullname="System.Linq.Enumerable" preserve="all" />
+  </assembly>
+  <assembly fullname="System.Collections">
+    <type fullname="*" preserve="all" />
+  </assembly>
+</linker>

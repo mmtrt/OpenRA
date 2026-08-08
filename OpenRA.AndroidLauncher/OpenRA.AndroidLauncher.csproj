@@ -13,20 +13,14 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PublishTrimmed>false</PublishTrimmed>
-    <!-- Release still runs the Android linker (SdkOnly). LINQ Max/etc must not be stripped. -->
-    <AndroidLinkMode>None</AndroidLinkMode>
-    <TrimMode>copyused</TrimMode>
+    <!-- User builds with PublishTrimmed=true; preserve reflection/LINQ via descriptor. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <!-- Do NOT set AndroidLinkMode=None — breaks CompressAssemblies (missing System.Core.dll). -->
     <RunAOTCompilation>false</RunAOTCompilation>
     <OpenRAAndroid>true</OpenRAAndroid>
   </PropertyGroup>
-
-  <ItemGroup>
-    <LinkDescription Include="Platforms\Android\linker.xml" />
-  </ItemGroup>
-
-
-  <ItemGroup>
+<ItemGroup>
     <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" AdditionalProperties="OpenRAAndroid=true" />
     <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" AdditionalProperties="OpenRAAndroid=true" />
   </ItemGroup>
@@ -53,5 +47,11 @@
 
   <ItemGroup>
     <AndroidJavaSource Include="Java\org\libsdl\app\*.java" />
+  </ItemGroup>
+
+  <!-- Preserve LINQ + OpenRA APIs used via reflection / dynamically loaded mod DLLs. -->
+  <ItemGroup>
+    <TrimmerRootDescriptor Include="Platforms\Android\trimming.xml" />
+    <TrimmerRootAssembly Include="System.Linq" />
   </ItemGroup>
 </Project>
