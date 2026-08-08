@@ -52,6 +52,7 @@
   <!-- Preserve LINQ + OpenRA APIs used via reflection / dynamically loaded mod DLLs. -->
   <ItemGroup>
     <TrimmerRootDescriptor Include="Platforms\Android\trimming.xml" />
-    <TrimmerRootAssembly Include="System.Linq" />
+    <!-- RootMode required by Microsoft.Android.Sdk.ILLink (MSB4096 without it). -->
+    <TrimmerRootAssembly Include="System.Linq" RootMode="All" />
   </ItemGroup>
 </Project>
