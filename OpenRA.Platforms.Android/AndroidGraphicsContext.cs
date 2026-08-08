@@ -527,6 +527,14 @@ namespace OpenRA.Platforms.Android
 		const int GL_RGBA8 = 0x8058;
 		const int GL_BGRA_EXT = 0x80E1; // EXT_texture_format_BGRA8888 / APPLE
 
+		// Whether GL_BGRA_EXT uploads work on this driver. Null = not yet determined.
+		// Determined ONCE (on the first SetData call) rather than probed on every single
+		// texture upload: this Mali driver rejects it unconditionally, so retrying it every
+		// time wastes a failed (validation-layer-costly) GL call per upload and floods the
+		// log with thousands of identical warnings for no benefit — the answer never changes
+		// within a single GL context.
+		static bool? bgraSupported;
+
 		int texture;
 		Size size;
 		TextureScaleFilter scaleFilter = TextureScaleFilter.Linear;
@@ -583,27 +591,58 @@ namespace OpenRA.Platforms.Android
 		{
 			EnsureTexture();
 			size = new Size(width, height);
-			var bb = GlesBuffers.ToByteBuffer(colors);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
 
-			// Internal = RGBA8 (ES3 valid). Upload format = BGRA to match OpenRA sprite byte order
-			// (same as desktop Texture.cs format param). Fall back to RGBA if driver rejects BGRA.
-			while (GLES20.GlGetError() != GLES20.GlNoError) { }
-			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
-				GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
-			var err = GLES20.GlGetError();
-			if (err != GLES20.GlNoError)
+			// Internal = RGBA8 (ES3 valid). Preferred upload format = BGRA to match OpenRA's
+			// internal sprite byte order (same as desktop Texture.cs format param) — this
+			// avoids any CPU-side reordering when the driver supports it. Falls back to RGBA
+			// with an explicit R/B channel swap when it doesn't; see bgraSupported above for
+			// why this is only probed once rather than on every call.
+			if (bgraSupported != false)
 			{
-				AndroidPlatformLog.Warn("OpenRA.GL",
-					"SetData BGRA upload failed 0x" + err.ToString("X") + " — falling back to RGBA");
-				bb.Position(0);
+				var bb = GlesBuffers.ToByteBuffer(colors);
+				while (GLES20.GlGetError() != GLES20.GlNoError) { }
 				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
-					GLES20.GlRgba, GLES20.GlUnsignedByte, bb);
-				GlDiagnostics.Check("Texture.SetData RGBA fallback " + width + "x" + height);
-			}
-			else
-				GlDiagnostics.Check("Texture.SetData BGRA " + width + "x" + height + " textureId=" + texture);
+					GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
+				var err = GLES20.GlGetError();
+				if (err == GLES20.GlNoError)
+				{
+					bgraSupported = true;
+					GlDiagnostics.Check("Texture.SetData BGRA " + width + "x" + height + " textureId=" + texture);
+					ApplyPaletteFilterIfNeeded(width);
+					return;
+				}
 
+				bgraSupported = false;
+				AndroidPlatformLog.Warn("OpenRA.GL",
+					"GL_BGRA_EXT upload failed 0x" + err.ToString("X") +
+					" — driver does not support it; using RGBA with CPU-side R/B swap for all textures from now on");
+			}
+
+			// CRITICAL: colors[] is laid out in BGRA byte order (OpenRA's internal
+			// convention). Simply re-uploading those same bytes labeled as GL_RGBA does NOT
+			// reinterpret them — it tells the GPU the red and blue channels are in the
+			// opposite of their actual positions, systematically swapping red and blue in
+			// every pixel sampled from this texture. We must swap them back on the CPU
+			// before upload so the final rendered colors are correct.
+			var swapped = new byte[colors.Length];
+			for (var i = 0; i + 3 < colors.Length; i += 4)
+			{
+				swapped[i] = colors[i + 2];     // R <- B
+				swapped[i + 1] = colors[i + 1]; // G
+				swapped[i + 2] = colors[i];     // B <- R
+				swapped[i + 3] = colors[i + 3]; // A
+			}
+
+			var swappedBb = GlesBuffers.ToByteBuffer(swapped);
+			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
+				GLES20.GlRgba, GLES20.GlUnsignedByte, swappedBb);
+			GlDiagnostics.Check("Texture.SetData RGBA fallback (R/B swapped) " + width + "x" + height);
+			ApplyPaletteFilterIfNeeded(width);
+		}
+
+		void ApplyPaletteFilterIfNeeded(int width)
+		{
 			// Palette sheets are 256×N; linear filtering interpolates indices → noisy unit sprites.
 			if (width == 256)
 			{
