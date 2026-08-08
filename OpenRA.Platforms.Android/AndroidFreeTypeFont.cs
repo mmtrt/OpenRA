@@ -112,12 +112,26 @@ namespace OpenRA.Platforms.Android
 
 			if (glyphSize.Width <= 0 || glyphSize.Height <= 0 || bitmapBuffer == IntPtr.Zero)
 			{
+				// Data MUST be a non-null (even if empty) array here, not null. The shared
+				// cross-platform caller (OpenRA.Game/Graphics/SpriteFont.cs CreateGlyph)
+				// treats glyph.Data == null as "this glyph failed to load" and forces
+				// Advance to 0, discarding whatever Advance value we return below. Every
+				// invisible-but-still-advancing glyph — most importantly the space
+				// character — hits this exact branch (zero-size bitmap), so returning
+				// Data = null here silently collapsed every space to zero width: words
+				// rendered with correct internal letter spacing but ran together with no
+				// gaps between them. The desktop reference implementation
+				// (OpenRA.Platforms.Default/FreeTypeFont.cs) never has this problem
+				// because it never special-cases the empty-bitmap case at all — it always
+				// returns Data = new byte[width*height], which for a 0x0 glyph is simply
+				// a non-null empty array, so the shared caller takes its normal path and
+				// uses the real Advance value.
 				return new FontGlyph
 				{
 					Offset = new int2(bitmapLeft, -bitmapTop),
 					Size = new Size(0, 0),
 					Advance = glyphAdvance,
-					Data = null
+					Data = Array.Empty<byte>()
 				};
 			}
 
