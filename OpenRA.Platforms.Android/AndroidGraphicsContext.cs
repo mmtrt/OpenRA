@@ -293,6 +293,7 @@ namespace OpenRA.Platforms.Android
 
 			// Ensure we present the default framebuffer at full surface size.
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
+			GLES20.GlDisable(GLES20.GlScissorTest);
 			var w = Math.Max(1, AndroidEgl.SurfaceWidth);
 			var h = Math.Max(1, AndroidEgl.SurfaceHeight);
 			GLES20.GlViewport(0, 0, w, h);
@@ -356,14 +357,24 @@ namespace OpenRA.Platforms.Android
 			_ => GLES20.GlTriangles
 		};
 
+		void EnsureVaoBound()
+		{
+			TryInitVao();
+			if (vao != 0)
+				GLES30.GlBindVertexArray(vao);
+		}
+
 		public void DrawPrimitives(PrimitiveType pt, int firstVertex, int numVertices)
 		{
+			EnsureVaoBound();
 			GLES20.GlDrawArrays(ModeFromPrimitiveType(pt), firstVertex, numVertices);
 			GlDiagnostics.Check("DrawPrimitives(" + pt + ", first=" + firstVertex + ", n=" + numVertices + ")");
 		}
 
 		public void DrawElements(int numIndices, int offset)
 		{
+			EnsureVaoBound();
+			// offset is byte offset into bound ELEMENT_ARRAY_BUFFER (desktop: new IntPtr(offset)).
 			GLES20.GlDrawElements(GLES20.GlTriangles, numIndices, GLES20.GlUnsignedInt, offset);
 			GlDiagnostics.Check("DrawElements(n=" + numIndices + ", offset=" + offset + ")");
 		}
@@ -656,6 +667,13 @@ namespace OpenRA.Platforms.Android
 			// Desktop FrameBuffer.Bind: glFlush before switch; restore viewport on Unbind.
 			GLES20.GlFlush();
 			GLES20.GlGetIntegerv(0x0BA2 /* GL_VIEWPORT */, savedViewport, 0);
+
+			// CRITICAL: screen-space scissor left enabled while binding a 2k/4k sheet FBO
+			// clips world rendering into a tiny region → "stuck in corner" / scrap terrain.
+			// Desktop tracks scissored flag and forbids Unbind while scissored; we also
+			// force-disable here so a prior UI scissor cannot affect sheet renders.
+			GLES20.GlDisable(GLES20.GlScissorTest);
+
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, framebuffer);
 			GLES20.GlViewport(0, 0, size.Width, size.Height);
 			GLES20.GlClearColor(clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f);
@@ -667,6 +685,8 @@ namespace OpenRA.Platforms.Android
 		public void Unbind()
 		{
 			GLES20.GlFlush();
+			// Leave scissor disabled; caller re-enables if needed for screen passes.
+			GLES20.GlDisable(GLES20.GlScissorTest);
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
 			GLES20.GlViewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
 		}
