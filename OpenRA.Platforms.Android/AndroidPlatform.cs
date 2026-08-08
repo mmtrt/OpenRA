@@ -7,7 +7,6 @@
 
 using System;
 using OpenRA.Primitives;
-using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
 {
@@ -38,7 +37,7 @@ namespace OpenRA.Platforms.Android
 			}
 			catch (Exception e)
 			{
-				ALog.Error("OpenRA.Font", "FreeType font failed: " + e);
+				AndroidPlatformLog.Error("OpenRA.Font", "FreeType font failed: " + e);
 				// Safe empty glyphs (Data=null) so SpriteFont skips blit
 				return new AndroidSafeEmptyFont();
 			}

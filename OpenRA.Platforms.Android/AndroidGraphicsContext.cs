@@ -13,7 +13,6 @@ using Android.Opengl;
 using Java.Nio;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
-using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
 {
@@ -142,7 +141,7 @@ namespace OpenRA.Platforms.Android
 			if (!AndroidEgl.MakeCurrent())
 			{
 				if (presentCount < 5)
-					ALog.Warn("OpenRA.GL", "Present: MakeCurrent failed: " + AndroidEgl.LastError);
+					AndroidPlatformLog.Warn("OpenRA.GL", "Present: MakeCurrent failed: " + AndroidEgl.LastError);
 				return;
 			}
 
@@ -155,7 +154,7 @@ namespace OpenRA.Platforms.Android
 			AndroidEgl.SwapBuffers();
 			presentCount++;
 			if (presentCount <= 5 || presentCount % 300 == 0)
-				ALog.Info("OpenRA.GL", "Present #" + presentCount + " surface=" + w + "x" + h);
+				AndroidPlatformLog.Info("OpenRA.GL", "Present #" + presentCount + " surface=" + w + "x" + h);
 		}
 
 		public void SetBlendMode(BlendMode mode)
@@ -458,7 +457,7 @@ namespace OpenRA.Platforms.Android
 
 			var status = GLES20.GlCheckFramebufferStatus(GLES20.GlFramebuffer);
 			if (status != GLES20.GlFramebufferComplete)
-				ALog.Error("OpenRA.GL", $"Framebuffer incomplete: 0x{status:X}");
+				AndroidPlatformLog.Error("OpenRA.GL", $"Framebuffer incomplete: 0x{status:X}");
 
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
 		}
@@ -533,14 +532,14 @@ namespace OpenRA.Platforms.Android
 			if (linkStatus[0] == 0)
 			{
 				var log = GLES20.GlGetProgramInfoLog(program);
-				ALog.Error("OpenRA.GL", "Shader link failed: " + log);
+				AndroidPlatformLog.Error("OpenRA.GL", "Shader link failed: " + log);
 				throw new InvalidProgramException("Shader link failed: " + log);
 			}
 
 			GLES20.GlDeleteShader(vs);
 			GLES20.GlDeleteShader(fs);
 
-			ALog.Info("OpenRA.GL", "Shader linked: " + bindings.VertexShaderName);
+			AndroidPlatformLog.Info("OpenRA.GL", "Shader linked: " + bindings.VertexShaderName);
 		}
 
 		static string AdaptShader(string code, bool vertex)
@@ -584,9 +583,9 @@ namespace OpenRA.Platforms.Android
 			if (status[0] == 0)
 			{
 				var log = GLES20.GlGetShaderInfoLog(shader);
-				ALog.Error("OpenRA.GL", "Shader compile failed: " + log);
+				AndroidPlatformLog.Error("OpenRA.GL", "Shader compile failed: " + log);
 				var preview = source.Length > 300 ? source.Substring(0, 300) + "..." : source;
-				ALog.Error("OpenRA.GL", "Source preview:\n" + preview);
+				AndroidPlatformLog.Error("OpenRA.GL", "Source preview:\n" + preview);
 				throw new InvalidProgramException("Shader compile failed: " + log);
 			}
 			return shader;

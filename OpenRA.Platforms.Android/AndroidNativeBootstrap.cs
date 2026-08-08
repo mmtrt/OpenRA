@@ -14,7 +14,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
 {
@@ -35,18 +34,18 @@ namespace OpenRA.Platforms.Android
 				try
 				{
 					nativeLibDir = global::Android.App.Application.Context?.ApplicationInfo?.NativeLibraryDir;
-					ALog.Info("OpenRA.Native", "NativeLibraryDir=" + (nativeLibDir ?? "(null)"));
+					AndroidPlatformLog.Info("OpenRA.Native", "NativeLibraryDir=" + (nativeLibDir ?? "(null)"));
 				}
 				catch (Exception e)
 				{
-					ALog.Warn("OpenRA.Native", "NativeLibraryDir: " + e.Message);
+					AndroidPlatformLog.Warn("OpenRA.Native", "NativeLibraryDir: " + e.Message);
 				}
 
 				// Catch assemblies loaded later (Eluant, Mods.Common via ObjectCreator).
 				AppDomain.CurrentDomain.AssemblyLoad += (_, args) =>
 				{
 					try { AttachResolver(args.LoadedAssembly); }
-					catch (Exception e) { ALog.Warn("OpenRA.Native", "AssemblyLoad resolver: " + e.Message); }
+					catch (Exception e) { AndroidPlatformLog.Warn("OpenRA.Native", "AssemblyLoad resolver: " + e.Message); }
 				};
 
 				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
@@ -62,7 +61,7 @@ namespace OpenRA.Platforms.Android
 			}
 			catch (Exception e)
 			{
-				ALog.Error("OpenRA.Native", "Init failed: " + e);
+				AndroidPlatformLog.Error("OpenRA.Native", "Init failed: " + e);
 			}
 		}
 
@@ -79,7 +78,7 @@ namespace OpenRA.Platforms.Android
 			}
 			catch (Exception e)
 			{
-				ALog.Warn("OpenRA.Native", "AttachResolvers: " + e.Message);
+				AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolvers: " + e.Message);
 			}
 		}
 
@@ -98,7 +97,7 @@ namespace OpenRA.Platforms.Android
 			try
 			{
 				NativeLibrary.SetDllImportResolver(asm, Resolve);
-				ALog.Info("OpenRA.Native", "DllImportResolver → " + name);
+				AndroidPlatformLog.Info("OpenRA.Native", "DllImportResolver → " + name);
 			}
 			catch (InvalidOperationException)
 			{
@@ -106,25 +105,28 @@ namespace OpenRA.Platforms.Android
 			}
 			catch (Exception e)
 			{
-				ALog.Warn("OpenRA.Native", "SetDllImportResolver(" + name + "): " + e.Message);
+				AndroidPlatformLog.Warn("OpenRA.Native", "SetDllImportResolver(" + name + "): " + e.Message);
 			}
 		}
 
 		static void Load(string name)
 		{
+			// Breadcrumb BEFORE LoadLibrary — if JNI_OnLoad aborts the process we still
+			// know which .so was in flight (AndroidFileLog is AutoFlush=true).
+			AndroidPlatformLog.Info("OpenRA.Native", "LoadLibrary BEGIN: " + name);
 			try
 			{
 				Java.Lang.JavaSystem.LoadLibrary(name);
-				ALog.Info("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + ") OK");
+				AndroidPlatformLog.Info("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + ") OK");
 				return;
 			}
 			catch (Java.Lang.Throwable t)
 			{
-				ALog.Warn("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + "): " + t.Message);
+				AndroidPlatformLog.Warn("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + "): " + t.Message);
 			}
 			catch (Exception e)
 			{
-				ALog.Warn("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + "): " + e.Message);
+				AndroidPlatformLog.Warn("OpenRA.Native", "JavaSystem.LoadLibrary(" + name + "): " + e.Message);
 			}
 
 			// Fallback: absolute path under the app's native lib dir.
@@ -139,13 +141,13 @@ namespace OpenRA.Platforms.Android
 					{
 						if (NativeLibrary.TryLoad(path, out _))
 						{
-							ALog.Info("OpenRA.Native", "TryLoad path OK: " + path);
+							AndroidPlatformLog.Info("OpenRA.Native", "TryLoad path OK: " + path);
 							return;
 						}
 					}
 					catch (Exception e)
 					{
-						ALog.Warn("OpenRA.Native", "TryLoad " + path + ": " + e.Message);
+						AndroidPlatformLog.Warn("OpenRA.Native", "TryLoad " + path + ": " + e.Message);
 					}
 				}
 			}
@@ -158,15 +160,15 @@ namespace OpenRA.Platforms.Android
 			try
 			{
 				foreach (var f in Directory.GetFiles(nativeLibDir, "liblua*"))
-					ALog.Info("OpenRA.Native", "  found " + f);
+					AndroidPlatformLog.Info("OpenRA.Native", "  found " + f);
 				foreach (var f in Directory.GetFiles(nativeLibDir, "libopenal*"))
-					ALog.Info("OpenRA.Native", "  found " + f);
+					AndroidPlatformLog.Info("OpenRA.Native", "  found " + f);
 				foreach (var f in Directory.GetFiles(nativeLibDir, "libfreetype*"))
-					ALog.Info("OpenRA.Native", "  found " + f);
+					AndroidPlatformLog.Info("OpenRA.Native", "  found " + f);
 			}
 			catch (Exception e)
 			{
-				ALog.Warn("OpenRA.Native", "ListNativeDir: " + e.Message);
+				AndroidPlatformLog.Warn("OpenRA.Native", "ListNativeDir: " + e.Message);
 			}
 		}
 
@@ -191,7 +193,7 @@ namespace OpenRA.Platforms.Android
 
 			if (candidates[0] == "SDL2")
 			{
-				ALog.Warn("OpenRA.Native", "SDL2 resolve blocked");
+				AndroidPlatformLog.Warn("OpenRA.Native", "SDL2 resolve blocked");
 				return IntPtr.Zero;
 			}
 
@@ -207,13 +209,13 @@ namespace OpenRA.Platforms.Android
 					var path = Path.Combine(nativeLibDir, "lib" + c + ".so");
 					if (File.Exists(path) && NativeLibrary.TryLoad(path, out handle) && handle != IntPtr.Zero)
 					{
-						ALog.Info("OpenRA.Native", "Resolved " + raw + " → " + path);
+						AndroidPlatformLog.Info("OpenRA.Native", "Resolved " + raw + " → " + path);
 						return handle;
 					}
 				}
 			}
 
-			ALog.Warn("OpenRA.Native", "DllImport resolve failed for '" + raw + "' (asm=" + (assembly?.GetName().Name ?? "?") + ")");
+			AndroidPlatformLog.Warn("OpenRA.Native", "DllImport resolve failed for '" + raw + "' (asm=" + (assembly?.GetName().Name ?? "?") + ")");
 			return IntPtr.Zero;
 		}
 	}

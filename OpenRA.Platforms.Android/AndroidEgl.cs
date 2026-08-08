@@ -8,7 +8,6 @@
 using System;
 using Android.Opengl;
 using Android.Views;
-using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android
 {
@@ -52,7 +51,7 @@ namespace OpenRA.Platforms.Android
 					if (!EGL14.EglInitialize(display, version, 0, version, 1))
 						return Fail("eglInitialize failed: " + EglError());
 
-					ALog.Info("OpenRA.EGL", $"EGL {version[0]}.{version[1]}");
+					AndroidPlatformLog.Info("OpenRA.EGL", $"EGL {version[0]}.{version[1]}");
 
 					int[] attribList =
 					{
@@ -72,7 +71,7 @@ namespace OpenRA.Platforms.Android
 					if (!EGL14.EglChooseConfig(display, attribList, 0, configs, 0, configs.Length, numConfigs, 0)
 					    || numConfigs[0] == 0)
 					{
-						ALog.Warn("OpenRA.EGL", "ES3 config missing, trying ES2");
+						AndroidPlatformLog.Warn("OpenRA.EGL", "ES3 config missing, trying ES2");
 						attribList = new[]
 						{
 							EGL14.EglRedSize, 8,
@@ -109,7 +108,7 @@ namespace OpenRA.Platforms.Android
 
 					initialized = true;
 					LastError = "";
-					ALog.Info("OpenRA.EGL", $"ready {SurfaceWidth}x{SurfaceHeight} (unbound for game thread)");
+					AndroidPlatformLog.Info("OpenRA.EGL", $"ready {SurfaceWidth}x{SurfaceHeight} (unbound for game thread)");
 					return true;
 				}
 				catch (Exception e)
@@ -180,7 +179,7 @@ namespace OpenRA.Platforms.Android
 				if (!initialized || surface == null || surface == EGL14.EglNoSurface)
 					return;
 				if (!EGL14.EglSwapBuffers(display, surface))
-					ALog.Warn("OpenRA.EGL", "eglSwapBuffers: " + EglError());
+					AndroidPlatformLog.Warn("OpenRA.EGL", "eglSwapBuffers: " + EglError());
 			}
 		}
 
@@ -227,7 +226,7 @@ namespace OpenRA.Platforms.Android
 		static bool Fail(string message)
 		{
 			LastError = message;
-			ALog.Error("OpenRA.EGL", message);
+			AndroidPlatformLog.Error("OpenRA.EGL", message);
 			DestroyUnlocked();
 			return false;
 		}
@@ -235,7 +234,7 @@ namespace OpenRA.Platforms.Android
 		static bool FailKeep(string message)
 		{
 			LastError = message;
-			ALog.Error("OpenRA.EGL", message);
+			AndroidPlatformLog.Error("OpenRA.EGL", message);
 			return false;
 		}
 

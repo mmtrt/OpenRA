@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Threading;
 using Android.App;
 using OpenRA;
+using OpenRA.Support;
 using OpenRA.Platforms.Android;
 
 namespace OpenRA.Android
@@ -29,13 +30,16 @@ namespace OpenRA.Android
 
 			try
 			{
-				AndroidFileLog.Init();
+				AndroidFileLog.Init(); // logcat-only until official channels exist
 				AndroidFileLog.Info("OpenRA.Bootstrap", $"Start attempt={++startAttempts} mod={mod}");
 
 				ContentBootstrap.EnsureLayout(ContentBootstrap.SupportDir ?? StorageAccess.ResolveSupportDir());
 				SupportDir = ContentBootstrap.SupportDir;
 				CacheDir = Path.Combine(SupportDir, "Cache");
 				Directory.CreateDirectory(CacheDir);
+
+				// Official engine logging under SupportDir/Logs/ (not a parallel openra.log).
+				InitOfficialLogging(SupportDir);
 
 				// ObjectCreator loads mod DLLs from Platform.BinDir (== BaseDirectory).
 				// Place assemblies there and install a resolve hook so we never dual-load
@@ -286,6 +290,93 @@ namespace OpenRA.Android
 				AndroidFileLog.Warn("OpenRA.Bootstrap", "settings.yaml: " + e.Message);
 			}
 		}
+
+
+		/// <summary>
+		/// Point Platform.SupportDir at the Android support tree and open the same
+		/// log channels the desktop engine uses (plus "android"). All launcher /
+		/// platform diagnostics then go through OpenRA.Support.Log → SupportDir/Logs/.
+		/// </summary>
+		public static void InitOfficialLogging(string supportDir)
+		{
+			try
+			{
+				if (string.IsNullOrEmpty(supportDir))
+					return;
+
+				var dir = supportDir;
+				if (dir[^1] != Path.DirectorySeparatorChar && dir[^1] != Path.AltDirectorySeparatorChar)
+					dir += Path.DirectorySeparatorChar;
+
+				Directory.CreateDirectory(Path.Combine(dir, "Logs"));
+
+				// Must run before any Platform.SupportDir access (Log.AddChannel uses it).
+				try
+				{
+					Platform.OverrideSupportDir(dir);
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Platform.OverrideSupportDir → " + dir);
+				}
+				catch (InvalidOperationException ioe)
+				{
+					// Already initialized (e.g. second Start attempt) — keep existing path.
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "OverrideSupportDir: " + ioe.Message);
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "OverrideSupportDir failed: " + e.Message);
+				}
+
+				// Channels match Game.Initialize; AddChannel is a no-op if already present.
+				TryAddChannel("android", "android.log", timestamped: true);
+				TryAddChannel("debug", "debug.log", timestamped: false);
+				TryAddChannel("graphics", "graphics.log", timestamped: false);
+				TryAddChannel("sound", "sound.log", timestamped: false);
+				TryAddChannel("perf", "perf.log", timestamped: false);
+				TryAddChannel("client", "client.log", timestamped: false);
+				TryAddChannel("server", "server.log", timestamped: true);
+
+				AndroidPlatformLog.MarkEngineLogReady();
+
+				AppDomain.CurrentDomain.UnhandledException -= OnUnhandled;
+				AppDomain.CurrentDomain.UnhandledException += OnUnhandled;
+
+				Log.Write("android", "Official logging ready SupportDir=" + dir);
+				Log.Write("debug", "Android bootstrap logging channels open");
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "InitOfficialLogging: " + e.Message);
+			}
+		}
+
+		static void TryAddChannel(string name, string file, bool timestamped)
+		{
+			try
+			{
+				Log.AddChannel(name, file, timestamped);
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "AddChannel " + name + ": " + e.Message);
+			}
+		}
+
+		static void OnUnhandled(object sender, UnhandledExceptionEventArgs args)
+		{
+			try
+			{
+				var ex = args.ExceptionObject as Exception;
+				var text = ex != null
+					? ex.ToString()
+					: (args.ExceptionObject != null ? args.ExceptionObject.ToString() : "unknown");
+				var line = "UnhandledException isTerminating=" + args.IsTerminating + " " + text;
+				try { Log.Write("debug", line); } catch { /* ignore */ }
+				AndroidPlatformLog.Error("OpenRA.Crash", line);
+				AndroidFileLog.Flush();
+			}
+			catch { /* last resort */ }
+		}
+
 
 		static bool EnsureEglCurrent()
 		{

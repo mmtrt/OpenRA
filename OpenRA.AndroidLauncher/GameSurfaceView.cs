@@ -5,7 +5,6 @@ using Android.Content;
 using Android.Views;
 using OpenRA.Platforms.Android;
 using AndroidFormat = Android.Graphics.Format;
-using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Android
 {
@@ -13,7 +12,7 @@ namespace OpenRA.Android
 	{
 		bool surfaceReady;
 		public bool IsSurfaceReady => surfaceReady && AndroidEgl.IsReady;
-		public event System.Action SurfaceReady;
+		public event Action SurfaceReady;
 		public int SurfaceWidth { get; private set; }
 		public int SurfaceHeight { get; private set; }
 
@@ -31,7 +30,7 @@ namespace OpenRA.Android
 
 		public void SurfaceCreated(ISurfaceHolder holder)
 		{
-			ALog.Info("OpenRA.Surface", "SurfaceCreated");
+			AndroidFileLog.Info("OpenRA.Surface", "SurfaceCreated");
 			var w = Width > 0 ? Width : 1280;
 			var h = Height > 0 ? Height : 720;
 			SurfaceWidth = w;
@@ -40,30 +39,30 @@ namespace OpenRA.Android
 			if (AndroidEgl.Initialize(holder, w, h))
 			{
 				surfaceReady = true;
-				ALog.Info("OpenRA.Surface", $"EGL ready {w}x{h}");
+				AndroidFileLog.Info("OpenRA.Surface", "EGL ready " + w + "x" + h);
 				SurfaceReady?.Invoke();
 			}
 			else
 			{
 				surfaceReady = false;
-				ALog.Error("OpenRA.Surface", "EGL init failed: " + AndroidEgl.LastError);
+				AndroidFileLog.Error("OpenRA.Surface", "EGL init failed: " + AndroidEgl.LastError);
 			}
 		}
 
 		public void SurfaceChanged(ISurfaceHolder holder, AndroidFormat format, int width, int height)
 		{
-			ALog.Info("OpenRA.Surface", $"SurfaceChanged {width}x{height}");
+			AndroidFileLog.Info("OpenRA.Surface", "SurfaceChanged " + width + "x" + height);
 			SurfaceWidth = width;
 			SurfaceHeight = height;
 			if (!AndroidEgl.Resize(holder, width, height))
-				ALog.Error("OpenRA.Surface", "EGL resize failed: " + AndroidEgl.LastError);
+				AndroidFileLog.Error("OpenRA.Surface", "EGL resize failed: " + AndroidEgl.LastError);
 			else
 				surfaceReady = AndroidEgl.IsReady;
 		}
 
 		public void SurfaceDestroyed(ISurfaceHolder holder)
 		{
-			ALog.Info("OpenRA.Surface", "SurfaceDestroyed");
+			AndroidFileLog.Info("OpenRA.Surface", "SurfaceDestroyed");
 			surfaceReady = false;
 			// Release current binding but keep display/context if possible — full Destroy
 			// only when activity is finishing (MainActivity.OnDestroy).

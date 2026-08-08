@@ -1,120 +1,65 @@
-// Logs to openra.log + error.log under OpenRa/ (app-external first, then public, then internal).
+// Compatibility facade for launcher code. Does NOT maintain a parallel openra.log.
+// Routes into OpenRA.Platforms.Android.AndroidPlatformLog → OpenRA.Support.Log.
 
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text;
-using Android.App;
+using OpenRA.Platforms.Android;
 using ALog = global::Android.Util.Log;
-using AEnv = global::Android.OS.Environment;
-using AProcess = global::Android.OS.Process;
 
 namespace OpenRA.Android
 {
+	/// <summary>
+	/// Thin alias kept so existing call sites compile. All durable logs go through
+	/// the engine <see cref="OpenRA.Support.Log"/> channels under SupportDir/Logs/.
+	/// </summary>
 	public static class AndroidFileLog
 	{
-		public const string PublicDirName = "OpenRA";
-		public const string MainLogName = "openra.log";
-		public const string ErrorLogName = "error.log";
-
-		static readonly object Gate = new();
-		static readonly List<StreamWriter> Writers = new();
-		static string primaryDir;
-		static bool initialized;
-
-		public static string ActiveDir => primaryDir;
-		public static string PreferredPublicDir => "/storage/emulated/0/OpenRA/Logs";
-
-		public static string PreferredPublicRoot => "/storage/emulated/0/OpenRA";
+		/// <summary>Legacy path name; engine logs live in SupportDir/Logs/.</summary>
+		public static string ActiveDir => ContentBootstrap.SupportDir != null
+			? System.IO.Path.Combine(ContentBootstrap.SupportDir, "Logs")
+			: null;
 
 		public static void Init()
 		{
-			lock (Gate)
-			{
-				if (initialized)
-					return;
-				initialized = true;
-
-				foreach (var dir in CandidateDirs())
-				{
-					try
-					{
-						Directory.CreateDirectory(dir);
-						OpenWriter(Path.Combine(dir, MainLogName));
-						if (primaryDir == null)
-							primaryDir = dir;
-						ALog.Info("OpenRA.Log", "Logging directory: " + dir);
-					}
-					catch (Exception e)
-					{
-						ALog.Warn("OpenRA.Log", "Cannot use log dir " + dir + ": " + e.Message);
-					}
-				}
-
-				WriteLine("INFO", "OpenRA.Log",
-					$"start utc={DateTime.UtcNow:o} pid={AProcess.MyPid()} primary={primaryDir}");
-			}
+			// No-op: official Log channels are created in EngineBootstrap.InitOfficialLogging.
+			// Keep method so early OnCreate call sites remain valid.
 		}
 
-		static void OpenWriter(string path)
-		{
-			var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-			Writers.Add(new StreamWriter(fs, Encoding.UTF8) { AutoFlush = true });
-		}
+		public static void Info(string tag, string message)
+			=> AndroidPlatformLog.Info(tag, message);
 
-		static List<string> CandidateDirs()
-		{
-			var list = new List<string>
-			{
-				// Survives uninstall (needs storage permission / all-files access)
-				"/storage/emulated/0/OpenRA/Logs",
-			};
+		public static void Warn(string tag, string message)
+			=> AndroidPlatformLog.Warn(tag, message);
 
-			try
-			{
-				var ext = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
-				if (!string.IsNullOrEmpty(ext))
-					list.Add(Path.Combine(ext, "OpenRA", "Logs"));
-			}
-			catch { /* ignore */ }
+		public static void Error(string tag, string message)
+			=> AndroidPlatformLog.Error(tag, message);
 
-			try
-			{
-				var internalRoot = Application.Context.FilesDir?.AbsolutePath;
-				if (!string.IsNullOrEmpty(internalRoot))
-					list.Add(Path.Combine(internalRoot, "OpenRA", "Logs"));
-			}
-			catch { /* ignore */ }
-
-			return list;
-		}
-
-		public static void Info(string tag, string message) => WriteLine("INFO", tag, message);
-		public static void Warn(string tag, string message) => WriteLine("WARN", tag, message);
-		public static void Error(string tag, string message) => WriteLine("ERROR", tag, message);
-		public static void Exception(string tag, Exception ex) => Error(tag, ex.ToString());
+		public static void Exception(string tag, Exception ex)
+			=> AndroidPlatformLog.Exception(tag, ex);
 
 		public static void WriteLine(string level, string tag, string message)
 		{
-			if (level == "ERROR")
-				ALog.Error(tag, message);
-			else if (level == "WARN")
-				ALog.Warn(tag, message);
+			if (string.Equals(level, "ERROR", StringComparison.OrdinalIgnoreCase))
+				AndroidPlatformLog.Error(tag, message);
+			else if (string.Equals(level, "WARN", StringComparison.OrdinalIgnoreCase))
+				AndroidPlatformLog.Warn(tag, message);
 			else
-				ALog.Info(tag, message);
+				AndroidPlatformLog.Info(tag, message);
+		}
 
-			lock (Gate)
+		/// <summary>
+		/// Best-effort: engine Log flushes on its own timer. No parallel file handles.
+		/// </summary>
+		public static void Flush()
+		{
+			try
 			{
-				if (!initialized)
-					Init();
-
-				var line = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} [{level}] {tag}: {message}";
-				foreach (var w in Writers)
-				{
-					try { w.WriteLine(line); }
-					catch { /* ignore */ }
-				}
+				// Reflect optional Log.FlushToDisk if fork exposes it; otherwise no-op.
+				var t = typeof(OpenRA.Support.Log);
+				var m = t.GetMethod("FlushToDisk",
+					System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+				m?.Invoke(null, m.GetParameters().Length == 0 ? null : new object[] { null });
 			}
+			catch { /* official Log has no public flush — ignore */ }
 		}
 	}
 }

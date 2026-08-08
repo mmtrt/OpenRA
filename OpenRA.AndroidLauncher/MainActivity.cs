@@ -103,6 +103,9 @@ namespace OpenRA.Android
 
 				ContentBootstrap.EnsureLayout(null);
 				var support = ContentBootstrap.SupportDir;
+				// Open SupportDir/Logs channels ASAP so install/UI lines are not logcat-only.
+				try { EngineBootstrap.InitOfficialLogging(support); }
+				catch (Exception e) { AndroidFileLog.Warn("OpenRA.Main", "InitOfficialLogging: " + e.Message); }
 				AndroidFileLog.Info("OpenRA.Main", "SupportDir=" + support);
 
 				if (ContentProbe.IsBaseContentInstalled(support))
@@ -125,7 +128,7 @@ namespace OpenRA.Android
 
 				try
 				{
-					Toast.MakeText(this, "Startup error — see openra.log", ToastLength.Long).Show();
+					Toast.MakeText(this, "Startup error — see SupportDir/Logs/", ToastLength.Long).Show();
 				}
 				catch { /* ignore */ }
 			}
@@ -187,7 +190,7 @@ namespace OpenRA.Android
 				RunOnUiThread(() =>
 				{
 					installView?.SetBusy(false, "Failed: " + e.Message);
-					Toast.MakeText(this, "Quick Install failed — see openra.log", ToastLength.Long).Show();
+					Toast.MakeText(this, "Quick Install failed — see SupportDir/Logs/", ToastLength.Long).Show();
 				});
 			}
 		}
@@ -269,7 +272,7 @@ namespace OpenRA.Android
 						}
 						else
 						{
-							statusOverlay.Text = "Engine exited — see openra.log";
+							statusOverlay.Text = "Engine exited — see SupportDir/Logs/";
 							statusOverlay.Visibility = ViewStates.Visible;
 						}
 					}
@@ -284,7 +287,7 @@ namespace OpenRA.Android
 				engineStartRequested = false;
 				AndroidFileLog.Exception("OpenRA.Main", ex);
 				statusOverlay.Visibility = ViewStates.Visible;
-				statusOverlay.Text = "Engine start failed — see openra.log";
+				statusOverlay.Text = "Engine start failed — see SupportDir/Logs/";
 			}
 		}
 
