@@ -513,6 +513,12 @@ namespace OpenRA.Platforms.Android
 
 	sealed class AndroidTexture : ITexture
 	{
+		// ES3 sized internal format (valid for color-renderable FBO attachments).
+		// Default/Texture.cs wrongly used GL_BGRA (0x80E1) as *internal* format on Embedded —
+		// that is only valid as the *format* param with EXT_texture_format_BGRA8888.
+		const int GL_RGBA8 = 0x8058;
+		const int GL_BGRA_EXT = 0x80E1; // EXT_texture_format_BGRA8888 / APPLE
+
 		int texture;
 		Size size;
 		TextureScaleFilter scaleFilter = TextureScaleFilter.Linear;
@@ -566,9 +572,24 @@ namespace OpenRA.Platforms.Android
 			size = new Size(width, height);
 			var bb = GlesBuffers.ToByteBuffer(colors);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
-				GLES20.GlRgba, GLES20.GlUnsignedByte, bb);
-			GlDiagnostics.Check("Texture.SetData " + width + "x" + height + " textureId=" + texture);
+
+			// Internal = RGBA8 (ES3 valid). Upload format = BGRA to match OpenRA sprite byte order
+			// (same as desktop Texture.cs format param). Fall back to RGBA if driver rejects BGRA.
+			while (GLES20.GlGetError() != GLES20.GlNoError) { }
+			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
+				GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
+			var err = GLES20.GlGetError();
+			if (err != GLES20.GlNoError)
+			{
+				AndroidPlatformLog.Warn("OpenRA.GL",
+					"SetData BGRA upload failed 0x" + err.ToString("X") + " — falling back to RGBA");
+				bb.Position(0);
+				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
+					GLES20.GlRgba, GLES20.GlUnsignedByte, bb);
+				GlDiagnostics.Check("Texture.SetData RGBA fallback " + width + "x" + height);
+			}
+			else
+				GlDiagnostics.Check("Texture.SetData BGRA " + width + "x" + height + " textureId=" + texture);
 		}
 
 		public void SetFloatData(float[] data, int width, int height)
@@ -586,15 +607,18 @@ namespace OpenRA.Platforms.Android
 			EnsureTexture();
 			size = new Size(width, height);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-			// Drain prior GL errors then allocate; log OOM (0x505) which caused partial black world.
+			// FBO color attachments need a sized color-renderable internal format (RGBA8).
+			// Never use GL_BGRA as internal format on GLES (INVALID_ENUM).
 			while (GLES20.GlGetError() != GLES20.GlNoError) { }
-			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
+			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
 				GLES20.GlRgba, GLES20.GlUnsignedByte, null);
 			var err = GLES20.GlGetError();
 			if (err != GLES20.GlNoError)
 				AndroidPlatformLog.Error("OpenRA.GL",
 					"SetEmpty " + width + "x" + height + " glError=0x" + err.ToString("X")
 					+ (err == 0x505 ? " GL_OUT_OF_MEMORY — world FBO/sheets may be incomplete" : ""));
+			else
+				GlDiagnostics.Check("Texture.SetEmpty RGBA8 " + width + "x" + height);
 		}
 
 		public void SetDataFromReadBuffer(Rectangle rect)
@@ -602,7 +626,9 @@ namespace OpenRA.Platforms.Android
 			EnsureTexture();
 			size = new Size(rect.Width, rect.Height);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-			GLES20.GlCopyTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, rect.Left, rect.Top, rect.Width, rect.Height, 0);
+			// CopyTexImage2D internal format must be sized RGBA8 on ES3 — not GL_BGRA.
+			GLES20.GlCopyTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, rect.Left, rect.Top, rect.Width, rect.Height, 0);
+			GlDiagnostics.Check("Texture.SetDataFromReadBuffer RGBA8");
 		}
 
 		public byte[] GetData()
