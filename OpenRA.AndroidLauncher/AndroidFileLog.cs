@@ -1,15 +1,14 @@
 // Compatibility facade for launcher code. Does NOT maintain a parallel openra.log.
-// Routes into OpenRA.Platforms.Android.AndroidPlatformLog → OpenRA.Support.Log.
+// Routes into OpenRA.Platforms.Android.AndroidPlatformLog → OpenRA.Log (official).
 
 using System;
 using OpenRA.Platforms.Android;
-using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Android
 {
 	/// <summary>
 	/// Thin alias kept so existing call sites compile. All durable logs go through
-	/// the engine <see cref="OpenRA.Support.Log"/> channels under SupportDir/Logs/.
+	/// the engine <see cref="OpenRA.Log"/> channels under SupportDir/Logs/.
 	/// </summary>
 	public static class AndroidFileLog
 	{
@@ -21,7 +20,6 @@ namespace OpenRA.Android
 		public static void Init()
 		{
 			// No-op: official Log channels are created in EngineBootstrap.InitOfficialLogging.
-			// Keep method so early OnCreate call sites remain valid.
 		}
 
 		public static void Info(string tag, string message)
@@ -47,17 +45,22 @@ namespace OpenRA.Android
 		}
 
 		/// <summary>
-		/// Best-effort: engine Log flushes on its own timer. No parallel file handles.
+		/// Best-effort flush of engine Log writers (private FlushToDisk via reflection).
 		/// </summary>
 		public static void Flush()
 		{
 			try
 			{
-				// Reflect optional Log.FlushToDisk if fork exposes it; otherwise no-op.
-				var t = typeof(OpenRA.Support.Log);
+				// Log lives in namespace OpenRA (OpenRA.Game), not OpenRA.Support.
+				var t = typeof(global::OpenRA.Log);
 				var m = t.GetMethod("FlushToDisk",
-					System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-				m?.Invoke(null, m.GetParameters().Length == 0 ? null : new object[] { null });
+					System.Reflection.BindingFlags.Public
+					| System.Reflection.BindingFlags.NonPublic
+					| System.Reflection.BindingFlags.Static);
+				if (m == null)
+					return;
+				var ps = m.GetParameters();
+				m.Invoke(null, ps.Length == 0 ? null : new object[] { null });
 			}
 			catch { /* official Log has no public flush — ignore */ }
 		}

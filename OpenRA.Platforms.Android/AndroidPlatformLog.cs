@@ -2,12 +2,12 @@
 /*
  * Platform-layer logging. Always mirrors to Android logcat.
  * Once EngineBootstrap calls MarkEngineLogReady(), lines also go through
- * OpenRA.Support.Log (official SupportDir/Logs/*.log channels).
+ * OpenRA.Log (official SupportDir/Logs/*.log channels).
  */
 #endregion
 
 using System;
-using OpenRA.Support;
+using OpenRA;
 using ALog = global::Android.Util.Log;
 
 namespace OpenRA.Platforms.Android

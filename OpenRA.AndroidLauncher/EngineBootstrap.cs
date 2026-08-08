@@ -5,7 +5,6 @@ using System.Reflection;
 using System.Threading;
 using Android.App;
 using OpenRA;
-using OpenRA.Support;
 using OpenRA.Platforms.Android;
 
 namespace OpenRA.Android
