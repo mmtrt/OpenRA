@@ -12,7 +12,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using OpenRA.Widgets;
 
 namespace OpenRA.Mods.Common.Widgets.Logic
@@ -48,9 +47,19 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 		static bool IsModInstalled(ModContent content)
 		{
-			return content.Packages
-				.Where(p => p.Value.Required)
-				.All(p => p.Value.TestFiles.All(f => File.Exists(Platform.ResolvePath(f))));
+			// NOTE: Deliberately manual loops, not `.Where(...).All(...)` — see the
+			// comment on ModPackage.IsInstalled() for why LINQ over an ImmutableArray<T>
+			// source can throw MissingMethodException on some Android runtimes.
+			foreach (var p in content.Packages)
+			{
+				if (!p.Value.Required)
+					continue;
+
+				if (!p.Value.IsInstalled())
+					return false;
+			}
+
+			return true;
 		}
 	}
 
@@ -131,7 +140,19 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				requiredWidget.IsVisible = () => p.Value.Required;
 
 				var sourceWidget = container.Get<ImageWidget>("SOURCE");
-				var sourceList = p.Value.Sources.Select(s => sources[s].Title).Distinct().JoinWith("\n");
+				// NOTE: Deliberately manual, not `.Select(...).Distinct()` — see the
+				// comment on ModContentLogic.IsModInstalled() for why LINQ over an
+				// ImmutableArray<T> source can throw MissingMethodException on some
+				// Android runtimes.
+				var sourceTitles = new List<string>();
+				foreach (var s in p.Value.Sources)
+				{
+					var sourceTitle = sources[s].Title;
+					if (!sourceTitles.Contains(sourceTitle))
+						sourceTitles.Add(sourceTitle);
+				}
+
+				var sourceList = sourceTitles.JoinWith("\n");
 				var isSourceAvailable = sourceList.Length != 0;
 				sourceWidget.GetTooltipText = () => sourceList;
 				sourceWidget.IsVisible = () => isSourceAvailable;
@@ -166,7 +187,19 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				scrollPanel.AddChild(container);
 			}
 
-			sourceAvailable = content.Packages.Select(kvp => kvp.Value).Any(p => p.Sources.Length > 0 && !p.IsInstalled());
+			// NOTE: Deliberately a manual loop, not `.Select(...).Any(...)` — see the
+			// comment on ModContentLogic.IsModInstalled() for why LINQ over an
+			// ImmutableArray<T> source can throw MissingMethodException on some
+			// Android runtimes.
+			sourceAvailable = false;
+			foreach (var p in content.Packages)
+			{
+				if (p.Value.Sources.Length > 0 && !p.Value.IsInstalled())
+				{
+					sourceAvailable = true;
+					break;
+				}
+			}
 		}
 	}
 }
