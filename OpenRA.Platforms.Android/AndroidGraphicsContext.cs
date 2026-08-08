@@ -141,6 +141,43 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
+		static int viewportLogCounter;
+
+		/// <summary>Rate-limited dump of GL viewport + Android window sizes (corner-shift diagnosis).</summary>
+		public static void LogViewportState(string context)
+		{
+			viewportLogCounter++;
+			if (viewportLogCounter > 5 && viewportLogCounter % 300 != 0)
+				return;
+
+			var vp = new int[4];
+			GLES20.GlGetIntegerv(0x0BA2 /* GL_VIEWPORT */, vp, 0);
+			var sc = new int[4];
+			GLES20.GlGetIntegerv(0x0C10 /* GL_SCISSOR_BOX */, sc, 0);
+			var scOn = new int[1];
+			GLES20.GlGetIntegerv(0x0C11 /* GL_SCISSOR_TEST */, scOn, 0);
+			var fb = new int[1];
+			GLES20.GlGetIntegerv(0x8CA6 /* GL_FRAMEBUFFER_BINDING */, fb, 0);
+
+			var win = AndroidPlatformWindow.Current;
+			var native = win != null ? win.NativeWindowSize.Width + "x" + win.NativeWindowSize.Height : "?";
+			var effective = win != null ? win.EffectiveWindowSize.Width + "x" + win.EffectiveWindowSize.Height : "?";
+			var surface = win != null ? win.SurfaceSize.Width + "x" + win.SurfaceSize.Height : "?";
+			var scale = win != null ? win.EffectiveWindowScale.ToString("0.###") : "?";
+
+			AndroidPlatformLog.Info("OpenRA.GL.View",
+				context
+				+ " vp=[" + vp[0] + "," + vp[1] + "," + vp[2] + "," + vp[3] + "]"
+				+ " scissor=" + (scOn[0] != 0 ? "ON" : "off")
+				+ " sc=[" + sc[0] + "," + sc[1] + "," + sc[2] + "," + sc[3] + "]"
+				+ " fbo=" + fb[0]
+				+ " native=" + native
+				+ " effective=" + effective
+				+ " surface=" + surface
+				+ " effScale=" + scale
+				+ " egl=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
+		}
+
 		public static void CheckFramebuffer(string context, int status)
 		{
 			if (status == GLES20.GlFramebufferComplete)
@@ -227,12 +264,18 @@ namespace OpenRA.Platforms.Android
 
 		public void DisableDepthBuffer() => GLES20.GlDisable(GLES20.GlDepthTest);
 
+		static int scissorLogCount;
 		public void EnableScissor(int x, int y, int width, int height)
 		{
 			if (width < 0) width = 0;
 			if (height < 0) height = 0;
 			GLES20.GlEnable(GLES20.GlScissorTest);
 			GLES20.GlScissor(x, y, width, height);
+			scissorLogCount++;
+			if (scissorLogCount <= 8 || scissorLogCount % 500 == 0)
+				AndroidPlatformLog.Info("OpenRA.GL.Scissor",
+					"#" + scissorLogCount + " xywh=[" + x + "," + y + "," + width + "," + height + "]"
+					+ " egl=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
 		}
 
 		public void DisableScissor() => GLES20.GlDisable(GLES20.GlScissorTest);
@@ -258,7 +301,10 @@ namespace OpenRA.Platforms.Android
 			AndroidEgl.SwapBuffers();
 			presentCount++;
 			if (presentCount <= 5 || presentCount % 300 == 0)
+			{
 				AndroidPlatformLog.Info("OpenRA.GL", "Present #" + presentCount + " surface=" + w + "x" + h);
+				GlDiagnostics.LogViewportState("Present#" + presentCount);
+			}
 		}
 
 		public void SetBlendMode(BlendMode mode)
@@ -615,6 +661,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlClearColor(clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f);
 			GLES20.GlClear(GLES20.GlColorBufferBit | GLES20.GlDepthBufferBit);
 			GlDiagnostics.Check("FrameBuffer.Bind " + size.Width + "x" + size.Height);
+			GlDiagnostics.LogViewportState("FBO.Bind " + size.Width + "x" + size.Height);
 		}
 
 		public void Unbind()
@@ -782,6 +829,7 @@ namespace OpenRA.Platforms.Android
 		// entire visible game world) samples real color data or ends up black, so if the
 		// world renders black while UI/effects render fine, this is the first place to look.
 		static readonly HashSet<string> LoggedPaletteUniforms = new();
+		static int projLogCount;
 
 		void LogPaletteUniformOnce(string name, string detail)
 		{
@@ -849,6 +897,18 @@ namespace OpenRA.Platforms.Android
 				GLES20.GlUseProgram(program);
 				GLES20.GlUniform3f(loc, x, y, z);
 				GlDiagnostics.Check("Shader.SetVec(" + name + ", 3)");
+			}
+
+			// World projection: gl_Position = (pos - Scroll) * p1 + p2
+			// Wrong p1/p2 vs viewport size → map pinned in a corner.
+			if (name == "Scroll" || name == "p1" || name == "p2")
+			{
+				projLogCount++;
+				if (projLogCount <= 12 || projLogCount % 600 == 0)
+					AndroidPlatformLog.Info("OpenRA.GL.Proj",
+						"#" + projLogCount + " program=" + program + " " + name
+						+ "=(" + x.ToString("0.####") + "," + y.ToString("0.####") + "," + z.ToString("0.####") + ")"
+						+ " loc=" + loc);
 			}
 		}
 

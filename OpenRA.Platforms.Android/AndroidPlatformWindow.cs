@@ -39,6 +39,11 @@ namespace OpenRA.Platforms.Android
 			this.scaleModifier = scaleModifier <= 0 ? 1f : scaleModifier;
 			glProfile = profile;
 			Current = this;
+			AndroidPlatformLog.Info("OpenRA.GL.View",
+				"Window ctor native=" + windowSize.Width + "x" + windowSize.Height
+				+ " scaleModifier=" + this.scaleModifier
+				+ " effective=" + EffectiveWindowSize.Width + "x" + EffectiveWindowSize.Height
+				+ " profile=" + profile);
 		}
 
 		public AndroidInput Input => input;
