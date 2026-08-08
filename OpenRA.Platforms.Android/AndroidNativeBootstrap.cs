@@ -45,6 +45,7 @@ namespace OpenRA.Platforms.Android
 				AppDomain.CurrentDomain.AssemblyLoad += (_, args) =>
 				{
 					try { AttachResolver(args.LoadedAssembly); }
+					catch (TypeLoadException) { /* ignore synthetic */ }
 					catch (Exception e) { AndroidPlatformLog.Warn("OpenRA.Native", "AssemblyLoad resolver: " + e.Message); }
 				};
 
@@ -89,8 +90,21 @@ namespace OpenRA.Platforms.Android
 		{
 			try
 			{
-				foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-					AttachResolver(asm);
+				Assembly[] asms;
+				try { asms = AppDomain.CurrentDomain.GetAssemblies(); }
+				catch (Exception e)
+				{
+					AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolvers GetAssemblies: " + e.Message);
+					return;
+				}
+
+				foreach (var asm in asms)
+				{
+					try { AttachResolver(asm); }
+					catch (TypeLoadException) { /* synthetic runtime assemblies */ }
+					catch (Exception e)
+					{ AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolvers item: " + e.Message); }
+				}
 			}
 			catch (Exception e)
 			{

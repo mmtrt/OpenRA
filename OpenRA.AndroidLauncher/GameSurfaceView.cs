@@ -36,17 +36,26 @@ namespace OpenRA.Android
 			SurfaceWidth = w;
 			SurfaceHeight = h;
 
-			// Prefer soft re-attach if display/context still alive.
 			bool ok;
 			if (AndroidEgl.IsReady)
+			{
 				ok = true;
+			}
+			else if (AndroidEgl.HasDisplayContext)
+			{
+				// Soft recovery after SurfaceDestroyed — context still valid.
+				ok = AndroidEgl.RecreateSurface(holder, w, h);
+			}
 			else
-				ok = AndroidEgl.Initialize(holder, w, h) || AndroidEgl.Resize(holder, w, h);
+			{
+				ok = AndroidEgl.Initialize(holder, w, h);
+			}
 
 			surfaceReady = ok && AndroidEgl.IsReady;
 			if (surfaceReady)
 			{
 				AndroidFileLog.Info("OpenRA.Surface", "EGL ready " + w + "x" + h);
+				try { AndroidPlatformWindow.Current?.SetSuspended(false); } catch { /* ignore */ }
 				SurfaceReady?.Invoke();
 			}
 			else
@@ -64,13 +73,17 @@ namespace OpenRA.Android
 			if (!AndroidEgl.Resize(holder, width, height))
 				AndroidFileLog.Error("OpenRA.Surface", "EGL resize failed: " + AndroidEgl.LastError);
 			else
+			{
 				surfaceReady = AndroidEgl.IsReady;
+				try { AndroidPlatformWindow.Current?.SyncSurfaceSize(); } catch { /* ignore */ }
+			}
 		}
 
 		public void SurfaceDestroyed(ISurfaceHolder holder)
 		{
 			AndroidFileLog.Info("OpenRA.Surface", "SurfaceDestroyed");
 			surfaceReady = false;
+			try { AndroidPlatformWindow.Current?.SetSuspended(true); } catch { /* ignore */ }
 			// Drop window surface only — keep GL context for fast resume.
 			AndroidEgl.DestroySurfaceOnly();
 		}

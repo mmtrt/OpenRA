@@ -344,8 +344,7 @@ namespace OpenRA.Android
 		protected override void OnResume()
 		{
 			base.OnResume();
-			try { OpenRA.Platforms.Android.AndroidEgl.MakeCurrent(); }
-			catch { /* ignore */ }
+			try { PlatformWindow?.SetSuspended(false); } catch { /* ignore */ }
 			AndroidFileLog.Info("OpenRA.Main", "OnResume");
 
 			if (installView != null && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))

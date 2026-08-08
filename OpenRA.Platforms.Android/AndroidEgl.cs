@@ -40,6 +40,19 @@ namespace OpenRA.Platforms.Android
 		public static int SurfaceHeight { get; private set; }
 		public static string LastError { get; private set; } = "";
 
+		/// <summary>Display+context alive (surface may be temporarily gone).</summary>
+		public static bool HasDisplayContext
+		{
+			get
+			{
+				lock (Gate)
+					return initialized
+						&& display != null && display != EGL14.EglNoDisplay
+						&& context != null && context != EGL14.EglNoContext
+						&& config != null;
+			}
+		}
+
 		public static bool Initialize(ISurfaceHolder holder, int width, int height)
 		{
 			lock (Gate)
@@ -209,6 +222,51 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
+		/// <summary>
+		/// After SurfaceDestroyed + SurfaceCreated: rebuild window surface on existing context.
+		/// </summary>
+		public static bool RecreateSurface(ISurfaceHolder holder, int width, int height)
+		{
+			lock (Gate)
+			{
+				width = Math.Max(1, width);
+				height = Math.Max(1, height);
+				SurfaceWidth = width;
+				SurfaceHeight = height;
+
+				if (!initialized
+				    || display == null || display == EGL14.EglNoDisplay
+				    || context == null || context == EGL14.EglNoContext
+				    || config == null)
+					return Initialize(holder, width, height);
+
+				try
+				{
+					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
+					if (surface != null && surface != EGL14.EglNoSurface)
+					{
+						EGL14.EglDestroySurface(display, surface);
+						surface = EGL14.EglNoSurface;
+					}
+
+					if (!CreateWindowSurfaceUnlocked(holder))
+					{
+						AndroidPlatformLog.Error("OpenRA.EGL", "RecreateSurface failed: " + LastError);
+						return false;
+					}
+
+					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
+					AndroidPlatformLog.Info("OpenRA.EGL", "RecreateSurface OK " + width + "x" + height);
+					return true;
+				}
+				catch (Exception e)
+				{
+					AndroidPlatformLog.Error("OpenRA.EGL", "RecreateSurface: " + e.Message);
+					return false;
+				}
+			}
+		}
+
 		public static bool MakeCurrent()
 		{
 			lock (Gate)
@@ -302,11 +360,21 @@ namespace OpenRA.Platforms.Android
 			return false;
 		}
 
+		static int failKeepCount;
+		static string lastFailKeep;
+
 		static bool FailKeep(string message)
 		{
 			LastError = message;
-			// Rate-limit MakeCurrent spam
-			AndroidPlatformLog.Error("OpenRA.EGL", message);
+			// Rate-limit identical spam (SurfaceDestroyed → thousands of MakeCurrent fails).
+			if (message != lastFailKeep)
+			{
+				lastFailKeep = message;
+				failKeepCount = 0;
+			}
+			failKeepCount++;
+			if (failKeepCount <= 3 || failKeepCount % 120 == 0)
+				AndroidPlatformLog.Error("OpenRA.EGL", message + " (x" + failKeepCount + ")");
 			return false;
 		}
 

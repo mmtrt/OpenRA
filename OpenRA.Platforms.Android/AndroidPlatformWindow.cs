@@ -56,7 +56,8 @@ namespace OpenRA.Platforms.Android
 		public int DisplayCount => 1;
 		public int CurrentDisplay => 0;
 		public bool HasInputFocus => !suspended;
-		public bool IsSuspended => suspended;
+		public bool IsSuspended =>
+			suspended || !AndroidEgl.IsReady; // pause render loop when window surface is gone
 
 		public event Action<float, float, float, float> OnWindowScaleChanged = (a, b, c, d) => { };
 
