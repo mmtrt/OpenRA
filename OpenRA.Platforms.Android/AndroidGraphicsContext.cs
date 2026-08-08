@@ -74,35 +74,80 @@ namespace OpenRA.Platforms.Android
 		}
 	}
 
+	/// <summary>
+	/// GLES validation helpers. Desktop OpenRA calls OpenGL.CheckGLError() after nearly every
+	/// GL call; we batch a drain of the error flag at strategic points and rate-limit logs.
+	/// </summary>
 	static class GlDiagnostics
 	{
 		static readonly HashSet<string> LoggedContexts = new();
 		static readonly object Gate = new();
+		static int totalErrors;
+		static bool capsLogged;
 
-		/// <summary>
-		/// Checks glGetError() and logs (once per distinct context+error combination, so a
-		/// per-frame repeating error cannot flood the log at 60fps) any error found. This is
-		/// purely additive — it never changes GL state or rendering behavior — added because
-		/// nothing in this file previously checked glGetError() at all (aside from one
-		/// glCheckFramebufferStatus call), so a state error anywhere upstream (bad attribute
-		/// setup, an unbound/incomplete texture, a rejected uniform type, ...) could silently
-		/// leave every subsequent draw call a no-op while Present() kept "succeeding" every
-		/// frame — exactly the black-screen-with-no-errors-visible symptom being chased here.
-		/// </summary>
+		/// <summary>Drain glGetError until NO_ERROR; log each new context+code once.</summary>
 		public static void Check(string context)
 		{
-			var err = GLES20.GlGetError();
-			if (err == GLES20.GlNoError)
-				return;
-
-			var key = context + ":0x" + err.ToString("X");
-			lock (Gate)
+			// Drain the full error queue (desktop CheckGLError only reads one, but drivers
+			// can stack multiple flags; leaving them poisons the next Check).
+			for (var i = 0; i < 8; i++)
 			{
-				if (!LoggedContexts.Add(key))
+				var err = GLES20.GlGetError();
+				if (err == GLES20.GlNoError)
 					return;
-			}
 
-			AndroidPlatformLog.Error("OpenRA.GL.Error", $"{context}: glGetError=0x{err:X} ({GlErrorName(err)})");
+				totalErrors++;
+				var key = context + ":0x" + err.ToString("X");
+				var first = false;
+				lock (Gate)
+					first = LoggedContexts.Add(key);
+
+				if (first)
+				{
+					AndroidPlatformLog.Error("OpenRA.GL.Error",
+						context + ": glGetError=0x" + err.ToString("X") + " (" + GlErrorName(err) + ")"
+						+ " totalErrors=" + totalErrors);
+				}
+			}
+		}
+
+		/// <summary>One-shot dump of renderer caps (compare with desktop GL for limits).</summary>
+		public static void LogCapsOnce()
+		{
+			if (capsLogged || !AndroidEgl.IsReady)
+				return;
+			capsLogged = true;
+			try
+			{
+				var vendor = GLES20.GlGetString(GLES20.GlVendor) ?? "?";
+				var renderer = GLES20.GlGetString(GLES20.GlRenderer) ?? "?";
+				var version = GLES20.GlGetString(GLES20.GlVersion) ?? "?";
+				var maxTex = new int[1];
+				GLES20.GlGetIntegerv(GLES20.GlMaxTextureSize, maxTex, 0);
+				var maxRb = new int[1];
+				GLES20.GlGetIntegerv(0x84E8 /* GL_MAX_RENDERBUFFER_SIZE */, maxRb, 0);
+				var maxVattribs = new int[1];
+				GLES20.GlGetIntegerv(0x8869 /* GL_MAX_VERTEX_ATTRIBS */, maxVattribs, 0);
+				AndroidPlatformLog.Info("OpenRA.GL.Caps",
+					"vendor=" + vendor + " renderer=" + renderer + " version=" + version
+					+ " MAX_TEXTURE_SIZE=" + maxTex[0]
+					+ " MAX_RENDERBUFFER_SIZE=" + maxRb[0]
+					+ " MAX_VERTEX_ATTRIBS=" + maxVattribs[0]
+					+ " surface=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
+			}
+			catch (Exception e)
+			{
+				AndroidPlatformLog.Warn("OpenRA.GL.Caps", e.Message);
+			}
+		}
+
+		public static void CheckFramebuffer(string context, int status)
+		{
+			if (status == GLES20.GlFramebufferComplete)
+				return;
+			AndroidPlatformLog.Error("OpenRA.GL.FBO",
+				context + ": incomplete status=0x" + status.ToString("X")
+				+ " (" + FboStatusName(status) + ")");
 		}
 
 		static string GlErrorName(int err) => err switch
@@ -115,6 +160,15 @@ namespace OpenRA.Platforms.Android
 			0x0505 => "GL_OUT_OF_MEMORY",
 			0x0506 => "GL_INVALID_FRAMEBUFFER_OPERATION",
 			_ => "UNKNOWN"
+		};
+
+		static string FboStatusName(int s) => s switch
+		{
+			0x8CD7 => "GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT",
+			0x8CD9 => "GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS",
+			0x8CD6 => "GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT",
+			0x8CDD => "GL_FRAMEBUFFER_UNSUPPORTED",
+			_ => "OTHER"
 		};
 	}
 
@@ -149,6 +203,7 @@ namespace OpenRA.Platforms.Android
 			vao = ids[0];
 			GLES30.GlBindVertexArray(vao);
 			GlDiagnostics.Check("TryInitVao (GenVertexArrays/BindVertexArray)");
+			GlDiagnostics.LogCapsOnce();
 			if (vao == 0)
 				AndroidPlatformLog.Error("OpenRA.GL", "TryInitVao: glGenVertexArrays returned 0 — no VAO bound");
 		}
@@ -544,8 +599,8 @@ namespace OpenRA.Platforms.Android
 				GLES20.GlRenderbuffer, depth);
 
 			var status = GLES20.GlCheckFramebufferStatus(GLES20.GlFramebuffer);
-			if (status != GLES20.GlFramebufferComplete)
-				AndroidPlatformLog.Error("OpenRA.GL", $"Framebuffer incomplete: 0x{status:X}");
+			GlDiagnostics.CheckFramebuffer("Create " + size.Width + "x" + size.Height, status);
+			GlDiagnostics.Check("FrameBuffer.Create after status check");
 
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
 		}

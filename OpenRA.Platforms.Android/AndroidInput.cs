@@ -33,13 +33,66 @@ namespace OpenRA.Platforms.Android
 		const int TapSlop = 22;
 		const int PanSlop = 3;
 
+		// UI thread enqueues (MainActivity.OnTouch); game thread drains (PumpInput).
+		// Must not enumerate Queue while the other thread mutates it.
+		readonly object queueLock = new();
 		readonly Queue<MouseInput> mouseQueue = new();
 		readonly Queue<float> zoomQueue = new();
 		readonly Queue<int2> panQueue = new();
 
-		public IReadOnlyCollection<MouseInput> PendingMouse => mouseQueue;
-		public IReadOnlyCollection<float> PendingZoom => zoomQueue;
-		public IReadOnlyCollection<int2> PendingPan => panQueue;
+		/// <summary>Snapshot mouse events for this frame (thread-safe).</summary>
+		public MouseInput[] DrainMouse()
+		{
+			lock (queueLock)
+			{
+				if (mouseQueue.Count == 0)
+					return Array.Empty<MouseInput>();
+				var a = mouseQueue.ToArray();
+				mouseQueue.Clear();
+				return a;
+			}
+		}
+
+		/// <summary>Snapshot pinch zoom ratios for this frame (thread-safe).</summary>
+		public float[] DrainZoom()
+		{
+			lock (queueLock)
+			{
+				if (zoomQueue.Count == 0)
+					return Array.Empty<float>();
+				var a = zoomQueue.ToArray();
+				zoomQueue.Clear();
+				return a;
+			}
+		}
+
+		public int2[] DrainPan()
+		{
+			lock (queueLock)
+			{
+				if (panQueue.Count == 0)
+					return Array.Empty<int2>();
+				var a = panQueue.ToArray();
+				panQueue.Clear();
+				return a;
+			}
+		}
+
+		// Legacy accessors — do not enumerate across threads; prefer Drain*.
+		public IReadOnlyCollection<MouseInput> PendingMouse
+		{
+			get { lock (queueLock) return mouseQueue.ToArray(); }
+		}
+
+		public IReadOnlyCollection<float> PendingZoom
+		{
+			get { lock (queueLock) return zoomQueue.ToArray(); }
+		}
+
+		public IReadOnlyCollection<int2> PendingPan
+		{
+			get { lock (queueLock) return panQueue.ToArray(); }
+		}
 
 		public void ClearFrame()
 		{
@@ -77,7 +130,7 @@ namespace OpenRA.Platforms.Android
 				var dx = x - old.X;
 				var dy = y - old.Y;
 				if (Math.Abs(dx) > PanSlop || Math.Abs(dy) > PanSlop)
-					panQueue.Enqueue(new int2(dx, dy));
+					lock (queueLock) panQueue.Enqueue(new int2(dx, dy));
 			}
 			else if (active.Count == 2)
 			{
@@ -87,7 +140,7 @@ namespace OpenRA.Platforms.Android
 				{
 					var ratio = d / lastPinchDist;
 					if (Math.Abs(ratio - 1f) > 0.02f)
-						zoomQueue.Enqueue(ratio);
+						lock (queueLock) zoomQueue.Enqueue(ratio);
 				}
 				lastPinchDist = d;
 			}
@@ -160,7 +213,8 @@ namespace OpenRA.Platforms.Android
 
 		void Enqueue(MouseInputEvent ev, MouseButton button, int2 loc, int multi, Modifiers mods = Modifiers.None)
 		{
-			mouseQueue.Enqueue(new MouseInput(ev, button, loc, int2.Zero, mods, multi));
+			lock (queueLock)
+				mouseQueue.Enqueue(new MouseInput(ev, button, loc, int2.Zero, mods, multi));
 		}
 
 		int IndexOf(int id)

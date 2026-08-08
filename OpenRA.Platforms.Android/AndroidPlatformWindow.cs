@@ -93,20 +93,31 @@ namespace OpenRA.Platforms.Android
 		{
 			SyncSurfaceSize();
 
+			// Drain under lock — UI thread may Enqueue during this frame.
+			// (Was: foreach PendingMouse → Collection was modified; enumeration…)
 			if (inputHandler != null)
 			{
-				foreach (var mi in input.PendingMouse)
+				foreach (var mi in input.DrainMouse())
 					inputHandler.OnMouseInput(mi);
 
-				foreach (var z in input.PendingZoom)
+				foreach (var z in input.DrainZoom())
 				{
 					inputHandler.OnMouseInput(new MouseInput(
 						MouseInputEvent.Scroll, MouseButton.None,
 						int2.Zero, new int2(0, (int)((z - 1f) * 120)), Modifiers.None, 0));
 				}
-			}
 
-			input.ClearFrame();
+				foreach (var pan in input.DrainPan())
+				{
+					inputHandler.OnMouseInput(new MouseInput(
+						MouseInputEvent.Move, MouseButton.None,
+						pan, int2.Zero, Modifiers.None, 0));
+				}
+			}
+			else
+			{
+				input.ClearFrame();
+			}
 		}
 
 		public string GetClipboardText() => string.Empty;
