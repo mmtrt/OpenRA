@@ -39,6 +39,7 @@ namespace OpenRA.Android
 
 				// Official engine logging under SupportDir/Logs/ (not a parallel openra.log).
 				InitOfficialLogging(SupportDir);
+				ContentProbe.LogInventory(SupportDir);
 
 				// ObjectCreator loads mod DLLs from Platform.BinDir (== BaseDirectory).
 				// Place assemblies there and install a resolve hook so we never dual-load
@@ -279,6 +280,7 @@ namespace OpenRA.Android
 					tab + "FullscreenSize: " + w + "," + h + nl +
 					tab + "DisableHardwareCursors: true" + nl +
 					tab + "GLProfile: Embedded" + nl +
+					tab + "UIScale: 1.0" + nl +
 					tab + "VSync: true" + nl +
 					"Sound:" + nl +
 					tab + "Device: Null" + nl;

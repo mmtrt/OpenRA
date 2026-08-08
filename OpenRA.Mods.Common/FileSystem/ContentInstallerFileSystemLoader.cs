@@ -80,8 +80,31 @@ namespace OpenRA.Mods.Common.FileSystem
 					{
 						fileSystem.Mount(kv.Key, kv.Value);
 					}
-					catch
+					catch (Exception e)
 					{
+						// Optional packages (~prefix) already handled by the engine; required ones:
+						var key = kv.Key ?? "";
+						if (key.StartsWith("~", StringComparison.Ordinal))
+							continue;
+
+						// Android: if the file/dir exists under SupportDir, treat as available.
+						// Strip "content|" prefix → path relative to Content/ra/v2.
+						var relative = key;
+						var pipe = relative.IndexOf('|');
+						if (pipe >= 0)
+							relative = relative[(pipe + 1)..];
+						if (relative.StartsWith("~", StringComparison.Ordinal))
+							relative = relative[1..];
+
+						var onDisk = Path.Combine(Platform.SupportDir, "Content", "ra", "v2",
+												  relative.Replace('/', Path.DirectorySeparatorChar));
+						if (File.Exists(onDisk) || Directory.Exists(onDisk))
+						{
+							Log.Write("debug", $"Content mount soft-OK (on disk): {key} → {onDisk}");
+							continue;
+						}
+
+						Log.Write("debug", $"Content mount failed: {key}: {e.Message}");
 						isContentAvailable = false;
 					}
 				}

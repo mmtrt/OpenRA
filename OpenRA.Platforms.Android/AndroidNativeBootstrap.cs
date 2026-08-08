@@ -20,6 +20,7 @@ namespace OpenRA.Platforms.Android
 	public static class AndroidNativeBootstrap
 	{
 		static bool loaded;
+		static int typeLoadWarns;
 		static readonly HashSet<string> ResolvedAssemblies = new(StringComparer.Ordinal);
 		static string nativeLibDir;
 
@@ -57,7 +58,10 @@ namespace OpenRA.Platforms.Android
 					{
 						try { AttachResolver(asm); }
 						catch (TypeLoadException tle)
-						{ AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolver TypeLoad: " + tle.Message); }
+						{
+							if (typeLoadWarns++ < 2)
+								AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolver TypeLoad: " + tle.Message);
+						}
 						catch (Exception e)
 						{ AndroidPlatformLog.Warn("OpenRA.Native", "AttachResolver: " + e.Message); }
 					}
