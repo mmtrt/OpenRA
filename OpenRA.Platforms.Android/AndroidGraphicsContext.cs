@@ -474,8 +474,15 @@ namespace OpenRA.Platforms.Android
 			EnsureTexture();
 			size = new Size(width, height);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
+			// Drain prior GL errors then allocate; log OOM (0x505) which caused partial black world.
+			while (GLES20.GlGetError() != GLES20.GlNoError) { }
 			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
 				GLES20.GlRgba, GLES20.GlUnsignedByte, null);
+			var err = GLES20.GlGetError();
+			if (err != GLES20.GlNoError)
+				AndroidPlatformLog.Error("OpenRA.GL",
+					"SetEmpty " + width + "x" + height + " glError=0x" + err.ToString("X")
+					+ (err == 0x505 ? " GL_OUT_OF_MEMORY — world FBO/sheets may be incomplete" : ""));
 		}
 
 		public void SetDataFromReadBuffer(Rectangle rect)
@@ -545,15 +552,19 @@ namespace OpenRA.Platforms.Android
 
 		public void Bind()
 		{
+			// Desktop FrameBuffer.Bind: glFlush before switch; restore viewport on Unbind.
+			GLES20.GlFlush();
 			GLES20.GlGetIntegerv(0x0BA2 /* GL_VIEWPORT */, savedViewport, 0);
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, framebuffer);
 			GLES20.GlViewport(0, 0, size.Width, size.Height);
 			GLES20.GlClearColor(clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f);
 			GLES20.GlClear(GLES20.GlColorBufferBit | GLES20.GlDepthBufferBit);
+			GlDiagnostics.Check("FrameBuffer.Bind " + size.Width + "x" + size.Height);
 		}
 
 		public void Unbind()
 		{
+			GLES20.GlFlush();
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
 			GLES20.GlViewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
 		}
