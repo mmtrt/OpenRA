@@ -333,13 +333,16 @@ namespace OpenRA.Android
 					return;
 				}
 
-				TryAddChannel("android", "android.log", timestamped: true);
+				// NEVER use timestamped:true before Game.Initialize — Log.WriteValue does
+				// Game.Settings.Server.TimestampFormat and Settings is still null → NRE kills
+				// the logging thread (UnhandledException isTerminating=True).
+				TryAddChannel("android", "android.log", timestamped: false);
 				TryAddChannel("debug", "debug.log", timestamped: false);
 				TryAddChannel("graphics", "graphics.log", timestamped: false);
 				TryAddChannel("sound", "sound.log", timestamped: false);
 				TryAddChannel("perf", "perf.log", timestamped: false);
 				TryAddChannel("client", "client.log", timestamped: false);
-				TryAddChannel("server", "server.log", timestamped: true);
+				TryAddChannel("server", "server.log", timestamped: false);
 
 				AndroidPlatformLog.MarkEngineLogReady();
 
