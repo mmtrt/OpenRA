@@ -226,11 +226,13 @@ namespace OpenRA.Android
 
 				Directory.CreateDirectory(Path.Combine(SupportDir, "Logs"));
 
+				// Engine.SupportDir intentionally omitted: ForceSupportDir already set
+				// Platform.SupportDir. Passing it again makes Game.Initialize call
+				// OverrideSupportDir which throws InvalidOperationException.
 				var args = new[]
 				{
 					"Engine.Platform=Android",
 					"Game.Mod=" + mod,
-					"Engine.SupportDir=" + SupportDir,
 					"Engine.EngineDir=" + SupportDir,
 					"Engine.ModSearchPaths=" + ContentBootstrap.ModsDir,
 					"Graphics.DisableHardwareCursors=True",
@@ -323,19 +325,11 @@ namespace OpenRA.Android
 				BootLog.Info("InitOfficialLogging dir=" + dir);
 
 				// Must run before any Platform.SupportDir access (Log.AddChannel uses it).
-				try
+				// Upstream OverrideSupportDir → InitializeSupportDir uses SpecialFolder.UserProfile,
+				// which is null on Android → Path.Combine throws. ForceSupportDir handles that.
+				if (!ForceSupportDir(dir))
 				{
-					Platform.OverrideSupportDir(dir);
-					BootLog.Info("Platform.OverrideSupportDir OK");
-				}
-				catch (InvalidOperationException ioe)
-				{
-					BootLog.Warn("OverrideSupportDir: " + ioe.Message);
-				}
-				catch (Exception e)
-				{
-					BootLog.Error("OverrideSupportDir failed: " + e);
-					// Cannot use official Log without SupportDir — stay on BootLog/logcat.
+					BootLog.Error("ForceSupportDir failed — official Log channels unavailable");
 					return;
 				}
 
@@ -371,6 +365,74 @@ namespace OpenRA.Android
 				catch { /* ignore */ }
 				try { AndroidFileLog.Warn("OpenRA.Bootstrap", "InitOfficialLogging: " + e.Message); }
 				catch { /* ignore */ }
+			}
+		}
+
+
+		/// <summary>
+		/// Set Platform support paths to <paramref name="dir"/> without relying on
+		/// SpecialFolder.UserProfile (null on Android).
+		/// Preferred path: Platform.OverrideSupportDir. Fallback: reflect private fields
+		/// (see patches/Platform.AndroidSupportDir.fragment.cs for the proper fork fix).
+		/// </summary>
+		static bool ForceSupportDir(string dir)
+		{
+			try
+			{
+				Platform.OverrideSupportDir(dir);
+				BootLog.Info("Platform.OverrideSupportDir OK");
+				return true;
+			}
+			catch (InvalidOperationException ioe)
+			{
+				// Already initialized (second Start) — assume previous path is fine.
+				BootLog.Warn("OverrideSupportDir: " + ioe.Message);
+				return true;
+			}
+			catch (Exception e)
+			{
+				BootLog.Warn("OverrideSupportDir failed (expected on unpatched Android): " + e.Message);
+			}
+
+			try
+			{
+				var t = typeof(Platform);
+				const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
+
+				// Match OverrideSupportDir: trailing separator, absolute path
+				if (dir[^1] != Path.DirectorySeparatorChar && dir[^1] != Path.AltDirectorySeparatorChar)
+					dir += Path.DirectorySeparatorChar;
+				dir = Path.GetFullPath(dir);
+
+				void Set(string name, object value)
+				{
+					var f = t.GetField(name, flags);
+					if (f == null)
+						throw new MissingFieldException(t.FullName, name);
+					f.SetValue(null, value);
+				}
+
+				Set("systemSupportPath", dir);
+				Set("legacyUserSupportPath", dir);
+				Set("modernUserSupportPath", dir);
+				Set("userSupportPath", dir);
+				Set("supportDirInitialized", true);
+
+				// Sanity: reading SupportDir must not throw and must match.
+				var got = Platform.SupportDir;
+				BootLog.Info("ForceSupportDir via reflection OK SupportDir=" + got);
+				if (!string.Equals(Path.GetFullPath(got), Path.GetFullPath(dir), StringComparison.OrdinalIgnoreCase)
+				    && !got.StartsWith(dir.TrimEnd('/', '\\'), StringComparison.OrdinalIgnoreCase))
+				{
+					BootLog.Warn("ForceSupportDir path mismatch got=" + got + " want=" + dir);
+				}
+
+				return true;
+			}
+			catch (Exception e)
+			{
+				BootLog.Error("ForceSupportDir reflection failed: " + e);
+				return false;
 			}
 		}
 
