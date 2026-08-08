@@ -84,13 +84,11 @@ namespace OpenRA.Mods.Common.FileSystem
 					}
 					catch (Exception e)
 					{
-						// Optional packages (~prefix): ignore mount failure.
 						var key = kv.Key ?? "";
 						if (key.StartsWith("~", StringComparison.Ordinal))
 							continue;
 
-						// Soft-OK when the file/dir exists under SupportDir (Android path/VFS edge cases).
-						// Strip "content|" (or other) prefix → path relative to Content/ra/v2.
+						// content|allies.mix → allies.mix under Content/ra/v2
 						var relative = key;
 						var pipe = relative.IndexOf('|');
 						if (pipe >= 0)
@@ -107,8 +105,23 @@ namespace OpenRA.Mods.Common.FileSystem
 
 						if (File.Exists(onDisk) || Directory.Exists(onDisk))
 						{
-							Log.Write("debug", "Content mount soft-OK (on disk): " + key + " → " + onDisk);
-							continue;
+							try
+							{
+								// Mount by absolute path so assets are actually in the VFS.
+								fileSystem.Mount(onDisk, string.IsNullOrEmpty(kv.Value) ? null : kv.Value);
+								Log.Write("debug",
+										  "Content mount soft-OK (absolute): " + key + " → " + onDisk
+										  + " (original error: " + e.Message + ")");
+								continue;
+							}
+							catch (Exception e2)
+							{
+								Log.Write("debug",
+										  "Content absolute mount failed: " + key + " → " + onDisk + ": " + e2.Message
+										  + " (original: " + e.Message + ")");
+								isContentAvailable = false;
+								continue;
+							}
 						}
 
 						Log.Write("debug", "Content mount failed: " + key + ": " + e.Message);

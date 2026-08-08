@@ -14,9 +14,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- Release still runs the Android linker (SdkOnly). LINQ Max/etc must not be stripped. -->
+    <AndroidLinkMode>None</AndroidLinkMode>
+    <TrimMode>copyused</TrimMode>
     <RunAOTCompilation>false</RunAOTCompilation>
     <OpenRAAndroid>true</OpenRAAndroid>
   </PropertyGroup>
+
+  <ItemGroup>
+    <LinkDescription Include="Platforms\Android\linker.xml" />
+  </ItemGroup>
+
 
   <ItemGroup>
     <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" AdditionalProperties="OpenRAAndroid=true" />
