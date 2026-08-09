@@ -12,6 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="OpenRA-OpenAL-CS" Version="1.0.23" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" AdditionalProperties="OpenRAAndroid=true" />
   </ItemGroup>
 

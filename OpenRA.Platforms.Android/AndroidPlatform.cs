@@ -26,7 +26,19 @@ namespace OpenRA.Platforms.Android
 
 		public ISoundEngine CreateSound(string device)
 		{
-			return new AndroidDummySoundEngine();
+			try
+			{
+				if (string.Equals(device, "Null", StringComparison.OrdinalIgnoreCase)
+				    || string.Equals(device, "Dummy", StringComparison.OrdinalIgnoreCase))
+					return new AndroidDummySoundEngine();
+
+				return new AndroidOpenAlSoundEngine(string.IsNullOrEmpty(device) ? null : device);
+			}
+			catch (Exception e)
+			{
+				AndroidPlatformLog.Warn("OpenRA.Sound", "OpenAL init failed, using dummy: " + e.Message);
+				return new AndroidDummySoundEngine();
+			}
 		}
 
 		public IFont CreateFont(byte[] data)

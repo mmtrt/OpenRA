@@ -248,7 +248,7 @@ namespace OpenRA.Android
 				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun " + string.Join(" ", args)
 					+ " surface=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
 				Game.InitializeAndRun(args);
-				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun returned");
+				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun returned (Quit/Exit)");
 			}
 			catch (Exception e)
 			{
@@ -258,6 +258,9 @@ namespace OpenRA.Android
 			{
 				IsRunning = false;
 				AndroidFileLog.Info("OpenRA.Bootstrap", "Game thread exit");
+				// Main menu Quit → Game.Exit() ends the run loop; close the Android app.
+				try { RequestAndroidAppExit(); }
+				catch (Exception ex) { AndroidFileLog.Warn("OpenRA.Bootstrap", "RequestAndroidAppExit: " + ex.Message); }
 			}
 		}
 
@@ -295,7 +298,7 @@ namespace OpenRA.Android
 					tab + "UIScale: 1.0" + nl +
 					tab + "VSync: true" + nl +
 					"Sound:" + nl +
-					tab + "Device: Null" + nl;
+					tab + "Device: " + nl;  // empty = default OpenAL device
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
 					"Seeded settings.yaml " + w + "x" + h + " path=" + path);
@@ -332,6 +335,14 @@ namespace OpenRA.Android
 						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	GLProfile: Embedded" + Environment.NewLine;
 					changed = true;
 				}
+				// Prefer real OpenAL over the old forced "Null" seed.
+				if (text.IndexOf("Device: Null", StringComparison.Ordinal) >= 0)
+				{
+					text = text.Replace("Device: Null", "Device:");
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Migrated Sound.Device Null → default (OpenAL)");
+				}
+
 				if (changed)
 				{
 					File.WriteAllText(path, text);
@@ -556,6 +567,44 @@ namespace OpenRA.Android
 			}
 
 			return false;
+		}
+
+		
+		/// <summary>
+		/// Main-menu Quit calls Game.Exit() which ends InitializeAndRun. Close the activity
+		/// and leave the process so the user is not left on a frozen SurfaceView.
+		/// </summary>
+		static void RequestAndroidAppExit()
+		{
+			var act = MainActivity.Current;
+			if (act == null)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "RequestAndroidAppExit: no activity");
+				return;
+			}
+
+			act.RunOnUiThread(() =>
+			{
+				try
+				{
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Finishing activity after Game.Exit");
+					act.FinishAffinity();
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "FinishAffinity: " + e.Message);
+				}
+
+				try
+				{
+					Java.Lang.JavaSystem.Exit(0);
+				}
+				catch
+				{
+					try { Android.OS.Process.KillProcess(Android.OS.Process.MyPid()); }
+					catch { /* ignore */ }
+				}
+			});
 		}
 
 		public static void Stop()

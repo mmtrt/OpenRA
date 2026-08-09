@@ -26,6 +26,9 @@ namespace OpenRA.Android
 	{
 		public static OpenRA.Platforms.Android.AndroidPlatformWindow PlatformWindow;
 
+		/// <summary>Active activity — used to Finish after main-menu Quit.</summary>
+		public static MainActivity Current { get; private set; }
+
 		GameSurfaceView surfaceView;
 		InstallContentView installView;
 		TextView statusOverlay;
@@ -38,6 +41,7 @@ namespace OpenRA.Android
 		protected override void OnCreate(Bundle savedInstanceState)
 		{
 			base.OnCreate(savedInstanceState);
+			Current = this;
 
 			try
 			{
@@ -404,6 +408,8 @@ namespace OpenRA.Android
 
 		protected override void OnDestroy()
 		{
+			if (ReferenceEquals(Current, this))
+				Current = null;
 			installCts?.Cancel();
 			AndroidFileLog.Info("OpenRA.Main", "OnDestroy");
 			try { EngineBootstrap.Stop(); }
