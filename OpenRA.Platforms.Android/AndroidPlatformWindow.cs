@@ -116,9 +116,18 @@ namespace OpenRA.Platforms.Android
 
 				foreach (var z in input.DrainZoom())
 				{
+					// Pinch zoom → wheel at last known pointer (menus need a location over the panel)
+					var loc = input.LastPointerLogical;
 					inputHandler.OnMouseInput(new MouseInput(
 						MouseInputEvent.Scroll, MouseButton.None,
-						int2.Zero, new int2(0, (int)((z - 1f) * 120)), Modifiers.None, 0));
+						loc, new int2(0, (int)((z - 1f) * 120)), Modifiers.None, 0));
+				}
+
+				foreach (var (loc, delta) in input.DrainScroll())
+				{
+					inputHandler.OnMouseInput(new MouseInput(
+						MouseInputEvent.Scroll, MouseButton.None,
+						loc, delta, Modifiers.None, 0));
 				}
 
 				foreach (var pan in input.DrainPan())

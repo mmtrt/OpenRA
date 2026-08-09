@@ -279,8 +279,19 @@ namespace OpenRA.Android
 				if (File.Exists(path))
 				{
 					EnsureAndroidRequiredSettings(path, w, h);
-					AndroidFileLog.Info("OpenRA.Bootstrap",
-						"settings.yaml preserved (exists) " + path);
+					try
+					{
+						var existing = File.ReadAllText(path);
+						var hasScale = existing.IndexOf("UIScale", StringComparison.OrdinalIgnoreCase) >= 0;
+						AndroidFileLog.Info("OpenRA.Bootstrap",
+							"settings.yaml preserved path=" + path
+							+ " hasUIScale=" + hasScale
+							+ " len=" + existing.Length);
+					}
+					catch
+					{
+						AndroidFileLog.Info("OpenRA.Bootstrap", "settings.yaml preserved (exists) " + path);
+					}
 					return;
 				}
 

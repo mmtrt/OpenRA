@@ -40,6 +40,9 @@ namespace OpenRA.Platforms.Android
 		readonly Queue<MouseInput> mouseQueue = new();
 		readonly Queue<float> zoomQueue = new();
 		readonly Queue<int2> panQueue = new();
+		readonly Queue<(int2 loc, int2 delta)> scrollQueue = new();
+		int2 lastPointerLogical;
+		public int2 LastPointerLogical => lastPointerLogical;
 
 		/// <summary>Snapshot mouse events for this frame (thread-safe).</summary>
 
@@ -133,6 +136,19 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
+		/// <summary>UI menu wheel-equivalent: (location, delta) pairs.</summary>
+		public (int2 loc, int2 delta)[] DrainScroll()
+		{
+			lock (queueLock)
+			{
+				if (scrollQueue.Count == 0)
+					return Array.Empty<(int2, int2)>();
+				var a = scrollQueue.ToArray();
+				scrollQueue.Clear();
+				return a;
+			}
+		}
+
 		// Legacy accessors — do not enumerate across threads; prefer Drain*.
 		public IReadOnlyCollection<MouseInput> PendingMouse
 		{
@@ -166,6 +182,7 @@ namespace OpenRA.Platforms.Android
 		public void OnTouchDown(int id, int x, int y, long timeMs)
 		{
 			ToLogical(ref x, ref y);
+			lastPointerLogical = new int2(x, y);
 			var pt = new TouchPoint(id, x, y, timeMs);
 			active.Add(pt);
 
@@ -193,8 +210,20 @@ namespace OpenRA.Platforms.Android
 			{
 				var dx = x - old.X;
 				var dy = y - old.Y;
-				if (Math.Abs(dx) > PanSlop || Math.Abs(dy) > PanSlop)
+				lastPointerLogical = new int2(x, y);
+				// Vertical-dominant drag → mouse-wheel equivalent so ScrollPanel / menus scroll.
+				// Finger moving up → content moves up → positive wheel in OpenRA is usually up;
+				// match desktop: scroll delta Y positive when wheel up (content down in some UIs).
+				// OpenRA ScrollPanel: positive Delta.Y scrolls up (show content above).
+				if (Math.Abs(dy) > Math.Abs(dx) && Math.Abs(dy) > PanSlop)
+				{
+					lock (queueLock)
+						scrollQueue.Enqueue((lastPointerLogical, new int2(0, dy)));
+				}
+				else if (Math.Abs(dx) > PanSlop || Math.Abs(dy) > PanSlop)
+				{
 					lock (queueLock) panQueue.Enqueue(new int2(dx, dy));
+				}
 			}
 			else if (active.Count == 2)
 			{
