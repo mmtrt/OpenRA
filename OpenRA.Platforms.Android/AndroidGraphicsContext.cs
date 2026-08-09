@@ -546,16 +546,11 @@ namespace OpenRA.Platforms.Android
 		// ES3 sized internal format (valid for color-renderable FBO attachments).
 		// Default/Texture.cs wrongly used GL_BGRA (0x80E1) as *internal* format on Embedded —
 		// that is only valid as the *format* param with EXT_texture_format_BGRA8888.
-		const int GL_RGBA8 = 0x8058;
-		const int GL_BGRA_EXT = 0x80E1; // EXT_texture_format_BGRA8888 / APPLE
+		const int GL_RGBA8 = 0x8058;       // FBO color-renderable (SetEmpty / attachments)
+		const int GL_BGRA_EXT = 0x80E1;    // pixel format (EXT_texture_format_BGRA8888)
+		const int GL_BGRA8_EXT = 0x93A1;   // sized internal format for Embedded sprite uploads
 
-		// Whether GL_BGRA_EXT uploads work on this driver. Null = not yet determined.
-		// Determined ONCE (on the first SetData call) rather than probed on every single
-		// texture upload: this Mali driver rejects it unconditionally, so retrying it every
-		// time wastes a failed (validation-layer-costly) GL call per upload and floods the
-		// log with thousands of identical warnings for no benefit — the answer never changes
-		// within a single GL context.
-		static bool? bgraSupported;
+		static bool loggedBgraOk;
 
 		int texture;
 		Size size;
@@ -614,71 +609,30 @@ namespace OpenRA.Platforms.Android
 			EnsureTexture();
 			size = new Size(width, height);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
+			ApplyScaleFilter();
 
-			// Internal = RGBA8 (ES3 valid). Preferred upload format = BGRA to match OpenRA's
-			// internal sprite byte order (same as desktop Texture.cs format param) — this
-			// avoids any CPU-side reordering when the driver supports it. Falls back to RGBA
-			// with an explicit R/B channel swap when it doesn't; see bgraSupported above for
-			// why this is only probed once rather than on every call.
-			if (bgraSupported != false)
+			// Match OpenRA.Platforms.Default.Texture for Embedded:
+			//   internal = GL_BGRA8_EXT (0x93A1), format = GL_BGRA (0x80E1)
+			// Mali rejects RGBA8 internal + BGRA format (0x502 INVALID_OPERATION).
+			// OpenRA sprite bytes are BGRA; keep that order — no CPU R/B swap.
+			var bb = GlesBuffers.ToByteBuffer(colors);
+			while (GLES20.GlGetError() != GLES20.GlNoError) { }
+			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
+				GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
+			var err = GLES20.GlGetError();
+			if (err != GLES20.GlNoError)
 			{
-				var bb = GlesBuffers.ToByteBuffer(colors);
-				while (GLES20.GlGetError() != GLES20.GlNoError) { }
-
-				// Desktop Embedded uses internal GL_BGRA8_EXT (0x93A1) + format BGRA.
-				// Using RGBA8 internal + BGRA format is INVALID_OPERATION on many Mali drivers
-				// (graphics.log: 0x502) and forces the RGBA+swap fallback for every sheet —
-				// including indexed terrain/unit sheets where channel layout is critical.
-				const int GL_BGRA8_EXT = 0x93A1;
-				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
-					GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
-				var err = GLES20.GlGetError();
-				if (err == GLES20.GlNoError)
-				{
-					bgraSupported = true;
-					GlDiagnostics.Check("Texture.SetData BGRA8_EXT " + width + "x" + height + " textureId=" + texture);
-					ApplyPaletteFilterIfNeeded(width);
-					return;
-				}
-
-				// Second try: RGBA8 internal + BGRA format (some drivers accept this)
-				while (GLES20.GlGetError() != GLES20.GlNoError) { }
-				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
-					GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
-				err = GLES20.GlGetError();
-				if (err == GLES20.GlNoError)
-				{
-					bgraSupported = true;
-					GlDiagnostics.Check("Texture.SetData RGBA8+BGRA " + width + "x" + height);
-					ApplyPaletteFilterIfNeeded(width);
-					return;
-				}
-
-				bgraSupported = false;
-				AndroidPlatformLog.Warn("OpenRA.GL",
-					"BGRA upload failed 0x" + err.ToString("X") +
-					" — using RGBA with CPU-side R/B swap for all textures from now on");
+				AndroidPlatformLog.Error("OpenRA.GL",
+					"SetData BGRA8_EXT failed 0x" + err.ToString("X") + " " + width + "x" + height
+					+ " — EXT_texture_format_BGRA8888 required for Embedded");
+			}
+			else if (!loggedBgraOk)
+			{
+				loggedBgraOk = true;
+				AndroidPlatformLog.Info("OpenRA.GL",
+					"SetData BGRA8_EXT OK (first) " + width + "x" + height);
 			}
 
-			// CRITICAL: colors[] is laid out in BGRA byte order (OpenRA's internal
-			// convention). Simply re-uploading those same bytes labeled as GL_RGBA does NOT
-			// reinterpret them — it tells the GPU the red and blue channels are in the
-			// opposite of their actual positions, systematically swapping red and blue in
-			// every pixel sampled from this texture. We must swap them back on the CPU
-			// before upload so the final rendered colors are correct.
-			var swapped = new byte[colors.Length];
-			for (var i = 0; i + 3 < colors.Length; i += 4)
-			{
-				swapped[i] = colors[i + 2];     // R <- B
-				swapped[i + 1] = colors[i + 1]; // G
-				swapped[i + 2] = colors[i];     // B <- R
-				swapped[i + 3] = colors[i + 3]; // A
-			}
-
-			var swappedBb = GlesBuffers.ToByteBuffer(swapped);
-			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
-				GLES20.GlRgba, GLES20.GlUnsignedByte, swappedBb);
-			GlDiagnostics.Check("Texture.SetData RGBA fallback (R/B swapped) " + width + "x" + height);
 			ApplyPaletteFilterIfNeeded(width);
 		}
 
