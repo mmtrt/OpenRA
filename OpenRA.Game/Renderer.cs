@@ -395,8 +395,8 @@ namespace OpenRA
 			{
 				for (var i = 0; i + 3 < numVertices; i += 4)
 				{
-					var minX = float.MaxValue, maxX = float.MinValue;
-					var minY = float.MaxValue, maxY = float.MinValue;
+					float minX = float.MaxValue, maxX = float.MinValue;
+					float minY = float.MaxValue, maxY = float.MinValue;
 					for (var j = 0; j < 4; j++)
 					{
 						var v = vertices[i + j];
