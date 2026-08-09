@@ -111,10 +111,28 @@ namespace OpenRA.Mods.Common.LoadScreens
 		{
 			var graphicSettings = Game.Settings.Graphics;
 
-			// Reset the UI scaling if the user has configured a UI scale that pushes us below the minimum allowed effective resolution
+			// Reset the UI scaling if the user has configured a UI scale that pushes us below
+			// the minimum allowed effective resolution.
+			//
+			// ANDROID: the panel size is fixed (e.g. 2400x1080). UIScale intentionally shrinks
+			// EffectiveWindowSize (Resolution) — at 1.75× height becomes ~617px which is below
+			// MinEffectiveResolution height (often 720). The desktop safety clamp then forced
+			// UIScale back to 1.0 and Settings.Save() stripped it from settings.yaml.
+			// Skip the auto-reset on Android so player-chosen scales persist.
 			var minResolution = modData.GetOrCreate<WorldViewportSizes>().MinEffectiveResolution;
 			var resolution = Game.Renderer.Resolution;
-			if ((resolution.Width < minResolution.Width || resolution.Height < minResolution.Height) && Game.Settings.Graphics.UIScale > 1.0f)
+			var isAndroid =
+#if ANDROID
+				true;
+#else
+				false;
+#endif
+			try { isAndroid = isAndroid || Platform.CurrentPlatform.ToString() == "Android"; }
+			catch { /* older trees */ }
+
+			if (!isAndroid
+				&& (resolution.Width < minResolution.Width || resolution.Height < minResolution.Height)
+				&& Game.Settings.Graphics.UIScale > 1.0f)
 			{
 				graphicSettings.UIScale = 1.0f;
 				Game.Renderer.SetUIScale(1.0f);
