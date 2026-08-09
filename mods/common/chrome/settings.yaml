@@ -9,7 +9,7 @@ Background@SETTINGS_PANEL:
 			HOTKEYS_PANEL: button-panel-hotkeys
 			ADVANCED_PANEL: button-panel-advanced
 	X: (WINDOW_WIDTH - WIDTH) / 2
-	Y: (WINDOW_HEIGHT -  HEIGHT) / 2
+	Y: (WINDOW_HEIGHT - HEIGHT) / 2
 	Width: 900
 	Height: 600
 	Children:

@@ -624,21 +624,40 @@ namespace OpenRA.Platforms.Android
 			{
 				var bb = GlesBuffers.ToByteBuffer(colors);
 				while (GLES20.GlGetError() != GLES20.GlNoError) { }
-				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
+
+				// Desktop Embedded uses internal GL_BGRA8_EXT (0x93A1) + format BGRA.
+				// Using RGBA8 internal + BGRA format is INVALID_OPERATION on many Mali drivers
+				// (graphics.log: 0x502) and forces the RGBA+swap fallback for every sheet —
+				// including indexed terrain/unit sheets where channel layout is critical.
+				const int GL_BGRA8_EXT = 0x93A1;
+				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
 					GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
 				var err = GLES20.GlGetError();
 				if (err == GLES20.GlNoError)
 				{
 					bgraSupported = true;
-					GlDiagnostics.Check("Texture.SetData BGRA " + width + "x" + height + " textureId=" + texture);
+					GlDiagnostics.Check("Texture.SetData BGRA8_EXT " + width + "x" + height + " textureId=" + texture);
+					ApplyPaletteFilterIfNeeded(width);
+					return;
+				}
+
+				// Second try: RGBA8 internal + BGRA format (some drivers accept this)
+				while (GLES20.GlGetError() != GLES20.GlNoError) { }
+				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
+					GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
+				err = GLES20.GlGetError();
+				if (err == GLES20.GlNoError)
+				{
+					bgraSupported = true;
+					GlDiagnostics.Check("Texture.SetData RGBA8+BGRA " + width + "x" + height);
 					ApplyPaletteFilterIfNeeded(width);
 					return;
 				}
 
 				bgraSupported = false;
 				AndroidPlatformLog.Warn("OpenRA.GL",
-					"GL_BGRA_EXT upload failed 0x" + err.ToString("X") +
-					" — driver does not support it; using RGBA with CPU-side R/B swap for all textures from now on");
+					"BGRA upload failed 0x" + err.ToString("X") +
+					" — using RGBA with CPU-side R/B swap for all textures from now on");
 			}
 
 			// CRITICAL: colors[] is laid out in BGRA byte order (OpenRA's internal

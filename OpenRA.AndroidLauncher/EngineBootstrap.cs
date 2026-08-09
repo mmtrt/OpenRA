@@ -329,7 +329,11 @@ namespace OpenRA.Android
 
 			// Prefer the higher value so a stale pin cannot force 1.0 over a good yaml,
 			// and a stripped yaml still recovers from pin.
-			return Math.Max(fromYaml, fromPin);
+			var s = Math.Max(fromYaml, fromPin);
+			// First-run default when neither yaml nor pin has a value yet
+			if (s <= 1.0001f && fromYaml <= 1.0001f && fromPin <= 1.0001f)
+				return 1.75f;
+			return s;
 		}
 
 		static void WritePinnedUIScale(string supportDir, float scale)
@@ -437,13 +441,14 @@ namespace OpenRA.Android
 					tab + "FullscreenSize: " + w + "," + h + nl +
 					tab + "DisableHardwareCursors: true" + nl +
 					tab + "GLProfile: Embedded" + nl +
-					tab + "UIScale: 1.0" + nl +
+					tab + "UIScale: 1.75" + nl +
 					tab + "VSync: true" + nl +
 					"Sound:" + nl +
 					tab + "Device: " + nl;  // empty = default OpenAL device
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
 					"Seeded settings.yaml " + w + "x" + h + " path=" + path);
+				WritePinnedUIScale(supportDir, 1.75f);
 			}
 			catch (Exception e)
 			{

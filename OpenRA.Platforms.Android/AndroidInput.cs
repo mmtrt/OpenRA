@@ -226,12 +226,12 @@ namespace OpenRA.Platforms.Android
 					catch { /* ignore */ }
 
 					// ~4 logical px finger ≈ 1 scroll unit at 100%; slower at higher UIScale
-					var scrollDy = (int)Math.Round(dy / (4f * scale));
+					var scrollDy = (int)Math.Round(dy / (10f * scale));
 					if (scrollDy == 0)
 						scrollDy = dy > 0 ? 1 : -1;
 					// Cap per-event jump (wheel is typically small steps)
-					if (scrollDy > 24) scrollDy = 24;
-					if (scrollDy < -24) scrollDy = -24;
+					if (scrollDy > 12) scrollDy = 12;
+					if (scrollDy < -12) scrollDy = -12;
 
 					lock (queueLock)
 						scrollQueue.Enqueue((lastPointerLogical, new int2(0, scrollDy)));
