@@ -380,8 +380,57 @@ namespace OpenRA
 			PerfHistory.Increment("batches", 1);
 		}
 
+		int loggedDegenerateQuads;
+
 		public void DrawQuadBatch(ref Vertex[] vertices, IShader shader, int numVertices)
 		{
+			// One-time-ish diagnostic: scan for any quad (4 consecutive vertices) whose
+			// on-screen bounding box is implausibly large — the signature of a degenerate/
+			// garbled quad (e.g. a "streak" spanning most of the screen instead of a small
+			// sprite or a proper full-viewport rectangle). Cheap early-exit keeps this from
+			// costing anything once we've logged a handful of occurrences. Uses OpenRA's own
+			// Log (mirrored into AndroidFileLog on Android) rather than any platform-specific
+			// call, since this is shared code.
+			if (loggedDegenerateQuads < 8)
+			{
+				for (var i = 0; i + 3 < numVertices; i += 4)
+				{
+					var minX = float.MaxValue, maxX = float.MinValue;
+					var minY = float.MaxValue, maxY = float.MinValue;
+					for (var j = 0; j < 4; j++)
+					{
+						var v = vertices[i + j];
+						if (v.X < minX) minX = v.X;
+						if (v.X > maxX) maxX = v.X;
+						if (v.Y < minY) minY = v.Y;
+						if (v.Y > maxY) maxY = v.Y;
+					}
+
+					var w = maxX - minX;
+					var h = maxY - minY;
+
+					// A legitimate full-viewport blit (the world-sheet composite) can
+					// legitimately be large in BOTH axes — that's fine. What we're hunting
+					// for is a quad that's large in one axis but not the other (or has an
+					// implausible aspect ratio), which is what a "thin diagonal streak"
+					// actually is: a quad whose 4 corners aren't forming a sane rectangle.
+					var maxDim = Math.Max(w, h);
+					var minDim = Math.Min(w, h);
+					if (maxDim > 400 && (minDim < 2 || maxDim / Math.Max(minDim, 0.001f) > 50))
+					{
+						loggedDegenerateQuads++;
+						Log.Write("graphics", "Degenerate quad #" + loggedDegenerateQuads +
+							" shader=" + shader.GetType().Name +
+							" verts=[" +
+							string.Join(" | ", vertices.Skip(i).Take(4).Select(v => $"({v.X:F1},{v.Y:F1},{v.Z:F1})")) +
+							"] bbox=" + w.ToString("F1") + "x" + h.ToString("F1"));
+
+						if (loggedDegenerateQuads >= 8)
+							break;
+					}
+				}
+			}
+
 			tempVertexBuffer.SetData(ref vertices, numVertices);
 			DrawQuadBatch(tempVertexBuffer, quadIndexBuffer, shader, numVertices / 4 * 6, 0);
 		}
