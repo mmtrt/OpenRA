@@ -32,6 +32,9 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		[FluentReference]
 		const string OtherRTS = "options-control-scheme.otherrts";
 
+		[FluentReference]
+		const string RustedWarfare = "options-control-scheme.rustedwarfare";
+
 		public static bool ShouldShowPrompt()
 		{
 			return Game.Settings.Game.IntroductionPromptVersion < IntroductionVersion;
@@ -49,6 +52,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				{ MouseControlStyle.Classic, FluentProvider.GetMessage(Classic) },
 				{ MouseControlStyle.Modern, FluentProvider.GetMessage(Modern) },
 				{ MouseControlStyle.OtherRTS, FluentProvider.GetMessage(OtherRTS) },
+				{ MouseControlStyle.RustedWarfare, FluentProvider.GetMessage(RustedWarfare) },
 			};
 
 			if (gameSettings.IntroductionPromptVersion < 2)
@@ -106,11 +110,15 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var mouseControlDescOtherRTS = widget.Get("MOUSE_CONTROL_DESC_OTHERRTS");
 			mouseControlDescOtherRTS.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.OtherRTS;
 
+			var mouseControlDescRustedWarfare = widget.GetOrNull("MOUSE_CONTROL_DESC_RUSTEDWARFARE");
+			if (mouseControlDescRustedWarfare != null)
+				mouseControlDescRustedWarfare.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.RustedWarfare;
+
 			var mouseControlDropdown = widget.Get<DropDownButtonWidget>("MOUSE_CONTROL_DROPDOWN");
 			mouseControlDropdown.OnMouseDown = _ => InputSettingsLogic.ShowMouseControlDropdown(mouseControlDropdown, controlTypes, gameSettings);
 			mouseControlDropdown.GetText = () => controlTypes[gameSettings.MouseControlStyle];
 
-			foreach (var container in new[] { mouseControlDescClassic, mouseControlDescModern, mouseControlDescOtherRTS })
+			foreach (var container in new[] { mouseControlDescClassic, mouseControlDescModern, mouseControlDescOtherRTS }.Concat(mouseControlDescRustedWarfare != null ? new[] { mouseControlDescRustedWarfare } : Array.Empty<Widget>()))
 			{
 				var classicScrollRight = container.Get("DESC_SCROLL_RIGHT");
 				classicScrollRight.IsVisible = () => (gameSettings.MouseControlStyle == MouseControlStyle.Classic) ^ gameSettings.UseAlternateScrollButton;

@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using OpenRA.Primitives;
+// Game.Settings for MouseControlStyle
 
 namespace OpenRA.Platforms.Android
 {
@@ -57,6 +58,43 @@ namespace OpenRA.Platforms.Android
 			x = (int)Math.Round(x / scale);
 			y = (int)Math.Round(y / scale);
 		}
+
+		/// <summary>
+		/// Classic / Modern / OtherRTS / RustedWarfare (if enum present on fork).
+		/// </summary>
+		static string CurrentMouseStyleName()
+		{
+			try
+			{
+				var s = Game.Settings?.Game?.MouseControlStyle;
+				return s == null ? "Modern" : s.ToString();
+			}
+			catch
+			{
+				return "Modern";
+			}
+		}
+
+		/// <summary>
+		/// Map a logical "primary" or "secondary" action to OpenRA mouse buttons
+		/// for the active control scheme (mirrors InputSettings.ResolveActionButton).
+		/// </summary>
+		static MouseButton PrimaryButton()
+		{
+			// Select / default left-click actions
+			return MouseButton.Left;
+		}
+
+		static MouseButton CommandButton()
+		{
+			// Classic: command with left; Modern / OtherRTS / RustedWarfare: right
+			var name = CurrentMouseStyleName();
+			if (name == "Classic")
+				return MouseButton.Left;
+			return MouseButton.Right;
+		}
+
+
 
 		public MouseInput[] DrainMouse()
 		{
@@ -189,8 +227,10 @@ namespace OpenRA.Platforms.Android
 
 				if (held >= LongPressMs && moved <= TapSlop)
 				{
-					Enqueue(MouseInputEvent.Down, MouseButton.Right, loc, 1);
-					Enqueue(MouseInputEvent.Up, MouseButton.Right, loc, 1);
+					// Long-press = secondary/command (Right for Modern/OtherRTS/RW, Left for Classic)
+					var cmd = CommandButton();
+					Enqueue(MouseInputEvent.Down, cmd, loc, 1);
+					Enqueue(MouseInputEvent.Up, cmd, loc, 1);
 				}
 				else if (moved <= TapSlop)
 				{
@@ -201,8 +241,9 @@ namespace OpenRA.Platforms.Android
 						multi = 2;
 
 					var mods = multi > 1 ? Modifiers.Ctrl : Modifiers.None;
-					Enqueue(MouseInputEvent.Down, MouseButton.Left, loc, multi, mods);
-					Enqueue(MouseInputEvent.Up, MouseButton.Left, loc, multi, mods);
+					// Tap = primary/select (always Left in all OpenRA schemes)
+					Enqueue(MouseInputEvent.Down, PrimaryButton(), loc, multi, mods);
+					Enqueue(MouseInputEvent.Up, PrimaryButton(), loc, multi, mods);
 					lastTapMs = timeMs;
 					lastTapPos = loc;
 				}
