@@ -675,28 +675,19 @@ namespace OpenRA.Platforms.Android
 			ApplyScaleFilter();
 			while (GLES20.GlGetError() != GLES20.GlNoError) { }
 
-			// Desktop Embedded SetEmpty → SetData(null) with GL_BGRA8_EXT + GL_BGRA.
-			// Prefer that for parity; fall back to RGBA8 if the driver rejects it as an
-			// FBO color-renderable format (checked later by FrameBuffer completeness).
-			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
-				GL_BGRA_EXT, GLES20.GlUnsignedByte, null);
-			var err = GLES20.GlGetError();
-			if (err == GLES20.GlNoError)
-			{
-				GlDiagnostics.Check("Texture.SetEmpty BGRA8_EXT " + width + "x" + height);
-				return;
-			}
-
-			while (GLES20.GlGetError() != GLES20.GlNoError) { }
+			// FBO color attachments must be color-renderable. On Mali, GL_BGRA8_EXT often
+			// accepts TexImage2D with null data but the FBO is then INCOMPLETE → black world
+			// with only some UI/sprites surviving. Always use RGBA8 for empty FBO textures.
+			// Sprite uploads still use BGRA8_EXT in SetData().
 			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
 				GLES20.GlRgba, GLES20.GlUnsignedByte, null);
-			err = GLES20.GlGetError();
+			var err = GLES20.GlGetError();
 			if (err != GLES20.GlNoError)
 				AndroidPlatformLog.Error("OpenRA.GL",
-					"SetEmpty " + width + "x" + height + " glError=0x" + err.ToString("X")
+					"SetEmpty RGBA8 " + width + "x" + height + " glError=0x" + err.ToString("X")
 					+ (err == 0x505 ? " GL_OUT_OF_MEMORY — world FBO/sheets may be incomplete" : ""));
 			else
-				GlDiagnostics.Check("Texture.SetEmpty RGBA8 fallback " + width + "x" + height);
+				GlDiagnostics.Check("Texture.SetEmpty RGBA8 " + width + "x" + height);
 		}
 
 		public void SetDataFromReadBuffer(Rectangle rect)
@@ -761,11 +752,21 @@ namespace OpenRA.Platforms.Android
 
 			var status = GLES20.GlCheckFramebufferStatus(GLES20.GlFramebuffer);
 			GlDiagnostics.CheckFramebuffer("Create " + size.Width + "x" + size.Height, status);
+			AndroidPlatformLog.Info("OpenRA.GL",
+				"FrameBuffer.Create " + size.Width + "x" + size.Height
+				+ " status=0x" + status.ToString("X")
+				+ (status == GLES20.GlFramebufferComplete ? " COMPLETE" : " INCOMPLETE — world will be black"));
+			if (status != GLES20.GlFramebufferComplete)
+				AndroidPlatformLog.Error("OpenRA.GL",
+					"Framebuffer incomplete 0x" + status.ToString("X")
+					+ " size=" + size.Width + "x" + size.Height
+					+ " — terrain/world buffer will not render");
 			GlDiagnostics.Check("FrameBuffer.Create after status check");
 
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
 		}
 
+		static int bindLogCount;
 		public void Bind()
 		{
 			// Desktop FrameBuffer.Bind: glFlush before switch; restore viewport on Unbind.
@@ -774,19 +775,27 @@ namespace OpenRA.Platforms.Android
 
 			// CRITICAL: screen-space scissor left enabled while binding a 2k/4k sheet FBO
 			// clips world rendering into a tiny region → "stuck in corner" / scrap terrain.
-			// Desktop tracks scissored flag and forbids Unbind while scissored; we also
-			// force-disable here so a prior UI scissor cannot affect sheet renders.
 			GLES20.GlDisable(GLES20.GlScissorTest);
+			GLES20.GlDisable(GLES20.GlDepthTest);
 
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, framebuffer);
 			GLES20.GlViewport(0, 0, size.Width, size.Height);
-			GLES20.GlClearColor(clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f);
+			// Always clear opaque — A=0 leaves the blit transparent → black screen with only
+			// later opaque sprites (units) visible. Shellmap survived; skirmish did not.
+			var ca = clearColor.A / 255f;
+			if (ca < 1f) ca = 1f;
+			GLES20.GlClearColor(clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, ca);
 			GLES20.GlClear(GLES20.GlColorBufferBit | GLES20.GlDepthBufferBit);
-			// Avoid per-frame GL state dumps — they cost milliseconds and flooded graphics.log
-			if (GlDiagnostics.Verbose)
+
+			bindLogCount++;
+			if (bindLogCount <= 12 || bindLogCount % 300 == 0)
 			{
-				GlDiagnostics.Check("FrameBuffer.Bind " + size.Width + "x" + size.Height);
-				GlDiagnostics.LogViewportState("FBO.Bind " + size.Width + "x" + size.Height);
+				var status = GLES20.GlCheckFramebufferStatus(GLES20.GlFramebuffer);
+				AndroidPlatformLog.Info("OpenRA.GL.View",
+					"FBO.Bind #" + bindLogCount + " " + size.Width + "x" + size.Height
+					+ " status=0x" + status.ToString("X")
+					+ (status == GLES20.GlFramebufferComplete ? " OK" : " INCOMPLETE")
+					+ " clearA=" + ca.ToString("0.##"));
 			}
 		}
 

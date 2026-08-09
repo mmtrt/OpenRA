@@ -423,10 +423,10 @@ namespace OpenRA.Platforms.Android
 		{
 			lock (queueLock)
 			{
-				// OpenRA tracks CursorPosition from Move events. Taps that only send
-				// Down/Up leave the cursor (and world order target) at the last Move
-				// location — so buildings place away from the finger. Always Move first.
-				if (ev == MouseInputEvent.Down || ev == MouseInputEvent.Up)
+				// Move before Down so CursorPosition matches the finger (placement/orders).
+				// Do not Move before Up — that can re-enter hover/tooltip logic every release
+				// and feels like an input "loop" when combined with production UI.
+				if (ev == MouseInputEvent.Down)
 					mouseQueue.Enqueue(new MouseInput(MouseInputEvent.Move, MouseButton.None, loc, int2.Zero, Modifiers.None, 0));
 				mouseQueue.Enqueue(new MouseInput(ev, button, loc, int2.Zero, mods, multi));
 			}
