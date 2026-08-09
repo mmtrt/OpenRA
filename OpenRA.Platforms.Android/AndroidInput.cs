@@ -41,6 +41,23 @@ namespace OpenRA.Platforms.Android
 		readonly Queue<int2> panQueue = new();
 
 		/// <summary>Snapshot mouse events for this frame (thread-safe).</summary>
+
+		/// <summary>
+		/// MotionEvent coords are surface pixels. OpenRA hit-testing uses EffectiveWindowSize
+		/// (logical) space. Divide by EffectiveWindowScale so buttons match when UIScale ≠ 1.
+		/// </summary>
+		static void ToLogical(ref int x, ref int y)
+		{
+			var win = AndroidPlatformWindow.Current;
+			if (win == null)
+				return;
+			var scale = win.EffectiveWindowScale;
+			if (scale <= 1e-6f || Math.Abs(scale - 1f) < 1e-6f)
+				return;
+			x = (int)Math.Round(x / scale);
+			y = (int)Math.Round(y / scale);
+		}
+
 		public MouseInput[] DrainMouse()
 		{
 			lock (queueLock)
@@ -110,6 +127,7 @@ namespace OpenRA.Platforms.Android
 
 		public void OnTouchDown(int id, int x, int y, long timeMs)
 		{
+			ToLogical(ref x, ref y);
 			var pt = new TouchPoint(id, x, y, timeMs);
 			active.Add(pt);
 
@@ -126,6 +144,7 @@ namespace OpenRA.Platforms.Android
 
 		public void OnTouchMove(int id, int x, int y)
 		{
+			ToLogical(ref x, ref y);
 			var i = IndexOf(id);
 			if (i < 0) return;
 
@@ -155,6 +174,7 @@ namespace OpenRA.Platforms.Android
 
 		public void OnTouchUp(int id, int x, int y, long timeMs)
 		{
+			ToLogical(ref x, ref y);
 			var i = IndexOf(id);
 			if (i < 0) return;
 
