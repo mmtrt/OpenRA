@@ -255,7 +255,22 @@ namespace OpenRA.Platforms.Android
 						return false;
 					}
 
-					EGL14.EglMakeCurrent(display, EGL14.EglNoSurface, EGL14.EglNoSurface, EGL14.EglNoContext);
+					// Bind the newly created surface to the (kept-alive) context. This was
+					// previously a second EglMakeCurrent(..., EglNoSurface, EglNoSurface,
+					// EglNoContext) call — i.e. an unbind, not a rebind, seemingly a
+					// copy-paste of the line above that tears down the OLD surface. In
+					// practice this self-corrected on the next frame anyway, since
+					// Present() calls MakeCurrent() (which does bind surface+context
+					// correctly) before every draw — but it meant nothing was actually
+					// current at the moment this method logged "RecreateSurface OK", and
+					// any GL call made in that window (before the next Present()) would
+					// silently no-op or fail against no current context.
+					if (!EGL14.EglMakeCurrent(display, surface, surface, context))
+					{
+						AndroidPlatformLog.Error("OpenRA.EGL", "RecreateSurface: eglMakeCurrent failed: " + EglError());
+						return false;
+					}
+
 					AndroidPlatformLog.Info("OpenRA.EGL", "RecreateSurface OK " + width + "x" + height);
 					return true;
 				}
