@@ -211,14 +211,30 @@ namespace OpenRA.Platforms.Android
 				var dx = x - old.X;
 				var dy = y - old.Y;
 				lastPointerLogical = new int2(x, y);
-				// Vertical-dominant drag → mouse-wheel equivalent so ScrollPanel / menus scroll.
-				// Finger moving up → content moves up → positive wheel in OpenRA is usually up;
-				// match desktop: scroll delta Y positive when wheel up (content down in some UIs).
-				// OpenRA ScrollPanel: positive Delta.Y scrolls up (show content above).
+				// Vertical-dominant drag → mouse-wheel equivalent for ScrollPanel / menus.
+				// Finger pixels are much larger than a notch of wheel (~10–20); scale down
+				// and clamp so lists do not fly. Also divide by UIScale so 200% feels similar.
 				if (Math.Abs(dy) > Math.Abs(dx) && Math.Abs(dy) > PanSlop)
 				{
+					var scale = 1f;
+					try
+					{
+						var win = AndroidPlatformWindow.Current;
+						if (win != null)
+							scale = Math.Max(1f, win.EffectiveWindowScale);
+					}
+					catch { /* ignore */ }
+
+					// ~4 logical px finger ≈ 1 scroll unit at 100%; slower at higher UIScale
+					var scrollDy = (int)Math.Round(dy / (4f * scale));
+					if (scrollDy == 0)
+						scrollDy = dy > 0 ? 1 : -1;
+					// Cap per-event jump (wheel is typically small steps)
+					if (scrollDy > 24) scrollDy = 24;
+					if (scrollDy < -24) scrollDy = -24;
+
 					lock (queueLock)
-						scrollQueue.Enqueue((lastPointerLogical, new int2(0, dy)));
+						scrollQueue.Enqueue((lastPointerLogical, new int2(0, scrollDy)));
 				}
 				else if (Math.Abs(dx) > PanSlop || Math.Abs(dy) > PanSlop)
 				{
