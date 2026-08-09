@@ -53,6 +53,7 @@ namespace OpenRA
 
 		IFrameBuffer worldBuffer;
 		Sheet worldSheet;
+		bool loggedWorldBlit;
 		Sprite worldSprite;
 		Size lastMaximumViewportSize;
 		Size lastWorldViewportSize;
@@ -300,6 +301,18 @@ namespace OpenRA
 					(int)(screenSprite.Bounds.Width / scale) / (worldSprite.Size.X - 1),
 					(int)(-screenSprite.Bounds.Height / scale) / (worldSprite.Size.Y - 1),
 					1f);
+
+				if (!loggedWorldBlit)
+				{
+					loggedWorldBlit = true;
+					var b = screenSprite.Bounds;
+					Log.Write("graphics", "BeginUI world blit: scale=" + scale +
+						" screenSprite.Bounds=[" + b.X + "," + b.Y + "," + b.Width + "," + b.Height + "]" +
+						" worldSprite.Size=" + worldSprite.Size +
+						" worldSheet.Size=" + worldSheet.Size +
+						" WorldDownscaleFactor=" + WorldDownscaleFactor +
+						" bufferScale=" + bufferScale);
+				}
 
 				SpriteRenderer.EnablePixelArtScaling(true);
 				RgbaSpriteRenderer.DrawSprite(worldSprite, float3.Zero, bufferScale);
