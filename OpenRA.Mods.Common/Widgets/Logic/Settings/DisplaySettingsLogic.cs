@@ -560,7 +560,14 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 							// Persist immediately — UIScale does not require restart, but leaving the
 							// menu without Save (or force-killing the app) previously dropped values
 							// above 1.5 that were only applied live.
-							try { Game.Settings.Save(); }
+							try
+							{
+								Game.Settings.Save();
+								// Android pin: settings.yaml can lose UIScale on next boot when
+								// Commit() omits default-valued fields after an in-memory reset.
+								var pin = System.IO.Path.Combine(Platform.SupportDir, "android-uiscale");
+								System.IO.File.WriteAllText(pin, o.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+							}
 							catch { /* ignore */ }
 						});
 					});

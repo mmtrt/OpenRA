@@ -230,7 +230,13 @@ namespace OpenRA.Android
 				// Engine.SupportDir intentionally omitted: ForceSupportDir already set
 				// Platform.SupportDir. Passing it again makes Game.Initialize call
 				// OverrideSupportDir which throws InvalidOperationException.
-				var args = new[]
+				// Pin/merge UIScale BEFORE building args so yaml + argv agree.
+				WriteAndroidSettings(SupportDir);
+				var uiScale = ReadPinnedUIScale(SupportDir);
+				if (uiScale > 1.0001f)
+					MergeUIScaleIntoSettingsYaml(SupportDir, uiScale);
+
+				var argsList = new System.Collections.Generic.List<string>
 				{
 					"Engine.Platform=Android",
 					"Game.Mod=" + mod,
@@ -239,8 +245,13 @@ namespace OpenRA.Android
 					"Graphics.DisableHardwareCursors=True",
 					"Graphics.GLProfile=Embedded"
 				};
-
-				WriteAndroidSettings(SupportDir);
+				// Arguments override settings.yaml — survives Save() stripping defaults mid-session.
+				if (uiScale >= 1f && uiScale <= 3f)
+				{
+					argsList.Add("Graphics.UIScale=" + uiScale.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Launch Graphics.UIScale=" + uiScale);
+				}
+				var args = argsList.ToArray();
 				try { Game.HideCursor = true; } catch { /* older builds */ }
 
 				// Eluant may load here — ensure DllImportResolver is on every assembly in the default ALC.
@@ -265,6 +276,119 @@ namespace OpenRA.Android
 		}
 
 
+
+		const string UIScalePinFile = "android-uiscale";
+
+		/// <summary>
+		/// UIScale above 1.0 was vanishing from settings.yaml on relaunch: Settings.Save()
+		/// omits fields that equal their defaults, and something was resetting Graphics.UIScale
+		/// to 1.0 before Save. Pin the value next to settings.yaml and always re-apply via
+		/// Engine args (Arguments override yaml) + merge back into settings.yaml on boot.
+		/// </summary>
+		static float ReadPinnedUIScale(string supportDir)
+		{
+			float fromYaml = 1f, fromPin = 1f;
+			try
+			{
+				var path = Path.Combine(supportDir, "settings.yaml");
+				if (File.Exists(path))
+				{
+					foreach (var raw in File.ReadAllLines(path))
+					{
+						var line = raw.Trim();
+						if (line.StartsWith("#", StringComparison.Ordinal))
+							continue;
+						if (line.StartsWith("UIScale:", StringComparison.OrdinalIgnoreCase))
+						{
+							var v = line.Substring("UIScale:".Length).Trim().Trim('"');
+							if (float.TryParse(v,
+								System.Globalization.NumberStyles.Float,
+								System.Globalization.CultureInfo.InvariantCulture,
+								out var s) && s >= 1f && s <= 3f)
+							{
+								fromYaml = s;
+								break;
+							}
+						}
+					}
+				}
+			}
+			catch { /* ignore */ }
+
+			try
+			{
+				var pin = Path.Combine(supportDir, UIScalePinFile);
+				if (File.Exists(pin) && float.TryParse(
+					File.ReadAllText(pin).Trim(),
+					System.Globalization.NumberStyles.Float,
+					System.Globalization.CultureInfo.InvariantCulture,
+					out var pinned) && pinned >= 1f && pinned <= 3f)
+					fromPin = pinned;
+			}
+			catch { /* ignore */ }
+
+			// Prefer the higher value so a stale pin cannot force 1.0 over a good yaml,
+			// and a stripped yaml still recovers from pin.
+			return Math.Max(fromYaml, fromPin);
+		}
+
+		static void WritePinnedUIScale(string supportDir, float scale)
+		{
+			try
+			{
+				if (scale < 1f || scale > 3f)
+					return;
+				var pin = Path.Combine(supportDir, UIScalePinFile);
+				File.WriteAllText(pin, scale.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "WritePinnedUIScale: " + e.Message);
+			}
+		}
+
+		/// <summary>
+		/// Ensure settings.yaml Graphics.UIScale matches the pinned value (re-insert if Save stripped it).
+		/// </summary>
+		static void MergeUIScaleIntoSettingsYaml(string supportDir, float scale)
+		{
+			try
+			{
+				if (scale <= 1.0001f)
+					return; // default omitted by design
+				var path = Path.Combine(supportDir, "settings.yaml");
+				if (!File.Exists(path))
+					return;
+				var text = File.ReadAllText(path);
+				var inv = System.Globalization.CultureInfo.InvariantCulture;
+				var scaleStr = scale.ToString("0.###", inv);
+				if (System.Text.RegularExpressions.Regex.IsMatch(text, @"(?im)^\s*UIScale\s*:"))
+				{
+					text = System.Text.RegularExpressions.Regex.Replace(
+						text,
+						@"(?im)^(\s*)UIScale\s*:.*$",
+						m => m.Groups[1].Value + "UIScale: " + scaleStr);
+				}
+				else if (text.Contains("Graphics:"))
+				{
+					text = text.Replace(
+						"Graphics:",
+						"Graphics:" + Environment.NewLine + "\tUIScale: " + scaleStr);
+				}
+				else
+				{
+					text += Environment.NewLine + "Graphics:" + Environment.NewLine + "\tUIScale: " + scaleStr + Environment.NewLine;
+				}
+				File.WriteAllText(path, text);
+				WritePinnedUIScale(supportDir, scale);
+				AndroidFileLog.Info("OpenRA.Bootstrap", "Merged UIScale=" + scaleStr + " into settings.yaml");
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "MergeUIScale: " + e.Message);
+			}
+		}
+
 		static void WriteAndroidSettings(string supportDir)
 		{
 			try
@@ -279,6 +403,12 @@ namespace OpenRA.Android
 				if (File.Exists(path))
 				{
 					EnsureAndroidRequiredSettings(path, w, h);
+					var scale = ReadPinnedUIScale(supportDir);
+					if (scale > 1.0001f)
+					{
+						WritePinnedUIScale(supportDir, scale);
+						MergeUIScaleIntoSettingsYaml(supportDir, scale);
+					}
 					try
 					{
 						var existing = File.ReadAllText(path);
@@ -286,6 +416,7 @@ namespace OpenRA.Android
 						AndroidFileLog.Info("OpenRA.Bootstrap",
 							"settings.yaml preserved path=" + path
 							+ " hasUIScale=" + hasScale
+							+ " pinnedScale=" + scale
 							+ " len=" + existing.Length);
 					}
 					catch
