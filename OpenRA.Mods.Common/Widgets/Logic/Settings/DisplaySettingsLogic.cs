@@ -568,7 +568,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var maxScales = new float2(Game.Renderer.NativeResolution) / new float2(viewportSizes.MinEffectiveResolution);
 			var maxScale = Math.Min(maxScales.X, maxScales.Y);
 
-			var validScales = new[] { 1f, 1.25f, 1.5f, 1.75f, 2f }.Where(x => x <= maxScale);
+			var validScales = new[] { 1f, 1.25f, 1.5f, 1.75f, 2f, 2.25f, 2.5f }.Where(x => x <= maxScale);
 			dropdown.ShowDropDown("LABEL_DROPDOWN_TEMPLATE", 500, validScales, SetupItem);
 		}
 	}
