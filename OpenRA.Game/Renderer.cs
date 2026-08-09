@@ -386,14 +386,11 @@ namespace OpenRA
 		{
 			// One-time-ish diagnostic: scan for any quad (4 consecutive vertices) that's
 			// geometrically degenerate — the signature of a "streak" artifact (a rectangle
-			// collapsed to a thin sliver). Compares actual polygon area (shoelace formula)
-			// against its axis-aligned bounding box area, NOT just bounding box dimensions:
-			// a bounding-box-only check misses a *diagonal* sliver, since a rotated thin
-			// rectangle can have a bounding box that looks roughly square/proportional in
-			// both X and Y even though its real area is near zero. Cheap early-exit once
-			// we've logged a handful of occurrences. Uses OpenRA's own Log (mirrored into
-			// AndroidFileLog on Android) rather than any platform-specific call, since this
-			// is shared code.
+			// collapsed to a thin sliver at some rotation). See the size-gate/ratio-check
+			// comment below for exactly what's being compared and why. Cheap early-exit
+			// once we've logged a handful of occurrences. Uses OpenRA's own Log (mirrored
+			// into AndroidFileLog on Android) rather than any platform-specific call, since
+			// this is shared code.
 			if (loggedDegenerateQuads < 8)
 			{
 				for (var i = 0; i + 3 < numVertices; i += 4)
@@ -421,11 +418,19 @@ namespace OpenRA
 						(v3.X * v0.Y - v0.X * v3.Y);
 					var quadArea = Math.Abs(shoelace) * 0.5f;
 
-					// A degenerate/sliver quad: spans a non-trivial bounding box (so it's not
-					// just a small, legitimately-thin normal sprite) but its actual area is
-					// tiny relative to that bounding box — i.e. most of the "rectangle" isn't
-					// really there, exactly what a diagonal streak is.
-					if (bboxArea > 40000 && quadArea < bboxArea * 0.05f)
+					// A degenerate/sliver quad: spans a substantial bounding-box DIAGONAL
+					// (so it's not a small, legitimately-thin normal UI element like a
+					// health-bar underline) AND its actual area is small relative to its
+					// bounding-box area. The diagonal is the size GATE (catches long-thin
+					// streaks at any rotation, unlike a bboxArea floor which unfairly
+					// excludes thin-but-long shapes precisely because they're thin). The
+					// quadArea-vs-bboxArea RATIO is the degeneracy check: for any legitimate
+					// axis-aligned rectangle, shoelace area == w*h exactly regardless of how
+					// thin it is (e.g. 480x2 has quadArea=960=bboxArea, ratio=1.0, never
+					// flagged) — that ratio only drops for a rotated/sheared/genuinely
+					// degenerate shape.
+					var diag = MathF.Sqrt(w * w + h * h);
+					if (diag > 300 && quadArea < bboxArea * 0.1f)
 					{
 						loggedDegenerateQuads++;
 						Log.Write("graphics", "Degenerate quad #" + loggedDegenerateQuads +
