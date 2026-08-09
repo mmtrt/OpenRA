@@ -554,7 +554,10 @@ namespace OpenRA.Platforms.Android
 
 		int texture;
 		Size size;
-		TextureScaleFilter scaleFilter = TextureScaleFilter.Linear;
+		// Default Nearest: OpenRA indexed sheets (terrain, units) store palette indices in a
+		// color channel. Linear filtering averages adjacent indices → near-black / fringing.
+		// World FBO texture is set to Linear explicitly by Renderer for the soft blit.
+		TextureScaleFilter scaleFilter = TextureScaleFilter.Nearest;
 
 		public Size Size => size;
 
@@ -595,8 +598,9 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlGenTextures(1, ids, 0);
 			texture = ids[0];
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMinFilter, GLES20.GlLinear);
-			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMagFilter, GLES20.GlLinear);
+			var filt = scaleFilter == TextureScaleFilter.Linear ? GLES20.GlLinear : GLES20.GlNearest;
+			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMinFilter, filt);
+			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMagFilter, filt);
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureWrapS, GLES20.GlClampToEdge);
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureWrapT, GLES20.GlClampToEdge);
 			GlDiagnostics.Check("Texture.EnsureTexture (GenTextures)");
@@ -857,13 +861,20 @@ namespace OpenRA.Platforms.Android
 			if (!code.Contains("#version", StringComparison.Ordinal))
 				code = "#version 300 es" + Environment.NewLine + code;
 
-			if (!vertex && !code.Contains("precision ", StringComparison.Ordinal))
+			if (!vertex)
 			{
-				var nl = code.IndexOf('\n');
-				if (nl >= 0)
-					code = code.Substring(0, nl + 1) + "precision mediump float;" + Environment.NewLine + code.Substring(nl + 1);
-				else
-					code = code + Environment.NewLine + "precision mediump float;" + Environment.NewLine;
+				// OpenRA combined.frag ships with mediump; on Mali that quantizes palette UVs
+				// and darkens indexed terrain. Force highp for all fragment shaders.
+				code = code.Replace("precision mediump float;", "precision highp float;");
+				if (!code.Contains("precision ", StringComparison.Ordinal))
+				{
+					var nl = code.IndexOf('
+');
+					if (nl >= 0)
+						code = code.Substring(0, nl + 1) + "precision highp float;" + Environment.NewLine + code.Substring(nl + 1);
+					else
+						code = code + Environment.NewLine + "precision highp float;" + Environment.NewLine;
+				}
 			}
 
 			return code;
