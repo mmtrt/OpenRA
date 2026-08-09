@@ -264,6 +264,7 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlClear(GLES20.GlDepthBufferBit);
 			GLES20.GlEnable(GLES20.GlDepthTest);
 			GLES20.GlDepthFunc(GLES20.GlLequal);
+			GLES20.GlDepthMask(true);
 		}
 
 		public void DisableDepthBuffer() => GLES20.GlDisable(GLES20.GlDepthTest);
@@ -603,6 +604,10 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureMagFilter, filt);
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureWrapS, GLES20.GlClampToEdge);
 			GLES20.GlTexParameteri(GLES20.GlTexture2d, GLES20.GlTextureWrapT, GLES20.GlClampToEdge);
+			// Match desktop PrepareTexture — required for complete texture state on ES3
+			GLES20.GlTexParameteri(GLES20.GlTexture2d, 0x813C /* GL_TEXTURE_BASE_LEVEL */, 0);
+			GLES20.GlTexParameteri(GLES20.GlTexture2d, 0x813D /* GL_TEXTURE_MAX_LEVEL */, 0);
+			GLES20.GlPixelStorei(0x0CF5 /* GL_UNPACK_ALIGNMENT */, 1);
 			GlDiagnostics.Check("Texture.EnsureTexture (GenTextures)");
 			if (texture == 0)
 				AndroidPlatformLog.Error("OpenRA.GL", "EnsureTexture: glGenTextures returned 0");
@@ -667,18 +672,31 @@ namespace OpenRA.Platforms.Android
 			EnsureTexture();
 			size = new Size(width, height);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-			// FBO color attachments need a sized color-renderable internal format (RGBA8).
-			// Never use GL_BGRA as internal format on GLES (INVALID_ENUM).
+			ApplyScaleFilter();
+			while (GLES20.GlGetError() != GLES20.GlNoError) { }
+
+			// Desktop Embedded SetEmpty → SetData(null) with GL_BGRA8_EXT + GL_BGRA.
+			// Prefer that for parity; fall back to RGBA8 if the driver rejects it as an
+			// FBO color-renderable format (checked later by FrameBuffer completeness).
+			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
+				GL_BGRA_EXT, GLES20.GlUnsignedByte, null);
+			var err = GLES20.GlGetError();
+			if (err == GLES20.GlNoError)
+			{
+				GlDiagnostics.Check("Texture.SetEmpty BGRA8_EXT " + width + "x" + height);
+				return;
+			}
+
 			while (GLES20.GlGetError() != GLES20.GlNoError) { }
 			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
 				GLES20.GlRgba, GLES20.GlUnsignedByte, null);
-			var err = GLES20.GlGetError();
+			err = GLES20.GlGetError();
 			if (err != GLES20.GlNoError)
 				AndroidPlatformLog.Error("OpenRA.GL",
 					"SetEmpty " + width + "x" + height + " glError=0x" + err.ToString("X")
 					+ (err == 0x505 ? " GL_OUT_OF_MEMORY — world FBO/sheets may be incomplete" : ""));
 			else
-				GlDiagnostics.Check("Texture.SetEmpty RGBA8 " + width + "x" + height);
+				GlDiagnostics.Check("Texture.SetEmpty RGBA8 fallback " + width + "x" + height);
 		}
 
 		public void SetDataFromReadBuffer(Rectangle rect)
@@ -812,7 +830,9 @@ namespace OpenRA.Platforms.Android
 		readonly int program;
 		readonly IShaderBindings bindings;
 		readonly Dictionary<string, int> uniformCache = new();
-		int textureUnit;
+		/// <summary>Sampler name → fixed texture unit (assigned at link, matches desktop Shader).</summary>
+		readonly Dictionary<string, int> samplerUnits = new();
+		readonly Dictionary<int, ITexture> boundTextures = new();
 
 		public AndroidShader(IShaderBindings bindings)
 		{
@@ -843,8 +863,31 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlDeleteShader(vs);
 			GLES20.GlDeleteShader(fs);
 
-			AndroidPlatformLog.Info("OpenRA.GL", "Shader linked: " + bindings.VertexShaderName);
+			// Fixed sampler units (desktop Shader.cs parity). ES requires sampler uniforms
+			// set while the program is current; values persist for the program lifetime.
+			GLES20.GlUseProgram(program);
+			var unit = 0;
+			string[] samplerNames =
+			{
+				"Texture0", "Texture1", "Texture2", "Texture3",
+				"Texture4", "Texture5", "Texture6", "Texture7",
+				"Palette", "ColorShifts"
+			};
+			foreach (var name in samplerNames)
+			{
+				var loc = GLES20.GlGetUniformLocation(program, name);
+				if (loc < 0)
+					continue;
+				uniformCache[name] = loc;
+				samplerUnits[name] = unit;
+				GLES20.GlUniform1i(loc, unit);
+				unit++;
+			}
+
+			AndroidPlatformLog.Info("OpenRA.GL", "Shader linked: " + bindings.VertexShaderName
+				+ " samplers=" + samplerUnits.Count);
 		}
+
 
 		static string AdaptShader(string code, bool vertex)
 		{
@@ -959,8 +1002,15 @@ namespace OpenRA.Platforms.Android
 		public void PrepareRender()
 		{
 			GLES20.GlUseProgram(program);
+			foreach (var kv in boundTextures)
+			{
+				var at = kv.Value as AndroidTexture;
+				if (at == null)
+					continue;
+				GLES20.GlActiveTexture(GLES20.GlTexture0 + kv.Key);
+				GLES20.GlBindTexture(GLES20.GlTexture2d, at.TextureId);
+			}
 			GlDiagnostics.Check("Shader.PrepareRender (UseProgram program=" + program + ")");
-			textureUnit = 0;
 		}
 
 		// Set once per distinct shader "program" instance (this port has two independent
@@ -1075,29 +1125,33 @@ namespace OpenRA.Platforms.Android
 
 		public void SetTexture(string param, ITexture t)
 		{
-			var loc = Uniform(param);
-			if (loc < 0)
+			if (t == null)
 				return;
+			if (!samplerUnits.TryGetValue(param, out var unit))
+			{
+				var locFallback = Uniform(param);
+				if (locFallback < 0)
+					return;
+				unit = 0;
+				foreach (var u in samplerUnits.Values)
+					if (u >= unit) unit = u + 1;
+				samplerUnits[param] = unit;
+				GLES20.GlUseProgram(program);
+				GLES20.GlUniform1i(locFallback, unit);
+			}
 
-			// See SetBool above for why this is required here: unlike the desktop backend,
-			// this method binds the texture and sets the sampler uniform immediately
-			// rather than deferring to PrepareRender(), so it must independently guarantee
-			// its own program is current rather than relying on a prior PrepareRender()
-			// call still being in effect.
+			boundTextures[unit] = t;
 			GLES20.GlUseProgram(program);
-
-			var unit = textureUnit++;
 			GLES20.GlActiveTexture(GLES20.GlTexture0 + unit);
 			var id = (t as AndroidTexture)?.TextureId ?? 0;
 			GLES20.GlBindTexture(GLES20.GlTexture2d, id);
-			GLES20.GlUniform1i(loc, unit);
 			GlDiagnostics.Check("Shader.SetTexture(" + param + ") unit=" + unit + " textureId=" + id);
 			if (id == 0)
-				AndroidPlatformLog.Warn("OpenRA.GL", "SetTexture(" + param + "): binding texture id 0 (t=" + (t == null ? "null" : t.GetType().Name) + ")");
+				AndroidPlatformLog.Warn("OpenRA.GL", "SetTexture(" + param + "): texture id 0");
 			if (param == "Palette")
 			{
 				var texSize = (t as AndroidTexture)?.Size ?? default;
-				LogPaletteUniformOnce(param, "loc=" + loc + " unit=" + unit + " textureId=" + id + " size=" + texSize.Width + "x" + texSize.Height);
+				LogPaletteUniformOnce(param, "unit=" + unit + " textureId=" + id + " size=" + texSize.Width + "x" + texSize.Height);
 			}
 		}
 
