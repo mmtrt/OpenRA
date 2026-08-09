@@ -24,6 +24,10 @@ namespace OpenRA.Platforms.Android
 		float lastPinchDist;
 		bool boxSelectActive;
 		int2 boxStart, boxEnd;
+		bool singleDragging;
+		bool twoFingerPanActive;
+		int2 twoFingerMid;
+		float twoFingerDist;
 
 		long lastTapMs;
 		int2 lastTapPos;
@@ -179,6 +183,7 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
+
 		public void OnTouchDown(int id, int x, int y, long timeMs)
 		{
 			ToLogical(ref x, ref y);
@@ -187,13 +192,28 @@ namespace OpenRA.Platforms.Android
 			active.Add(pt);
 
 			if (active.Count == 1)
+			{
 				primary = pt;
+				singleDragging = false;
+			}
 			else if (active.Count == 2)
 			{
-				boxSelectActive = true;
-				boxStart = new int2(active[0].X, active[0].Y);
-				boxEnd = new int2(x, y);
-				lastPinchDist = Dist(active[0], pt);
+				// GeneralsZH / RW: second finger cancels one-finger box and starts
+				// two-finger pan + pinch-zoom (not box select on second finger).
+				if (singleDragging)
+				{
+					Enqueue(MouseInputEvent.Up, PrimaryButton(), lastPointerLogical, 1);
+					singleDragging = false;
+				}
+
+				boxSelectActive = false;
+				twoFingerPanActive = true;
+				twoFingerMid = Mid(active[0], active[1]);
+				twoFingerDist = Dist(active[0], active[1]);
+				lastPinchDist = twoFingerDist;
+
+				// Middle-button pan (OpenRA camera drag) — Down at midpoint
+				Enqueue(MouseInputEvent.Down, MouseButton.Middle, twoFingerMid, 1);
 			}
 		}
 
@@ -205,16 +225,60 @@ namespace OpenRA.Platforms.Android
 
 			var old = active[i];
 			active[i] = new TouchPoint(id, x, y, old.DownMs);
+			lastPointerLogical = new int2(x, y);
 
 			if (active.Count == 1 && primary.Id == id)
 			{
 				var dx = x - old.X;
 				var dy = y - old.Y;
-				lastPointerLogical = new int2(x, y);
-				// Vertical-dominant drag → mouse-wheel equivalent for ScrollPanel / menus.
-				// Finger pixels are much larger than a notch of wheel (~10–20); scale down
-				// and clamp so lists do not fly. Also divide by UIScale so 200% feels similar.
-				if (Math.Abs(dy) > Math.Abs(dx) && Math.Abs(dy) > PanSlop)
+				var moved = Math.Abs(x - primary.X) + Math.Abs(y - primary.Y);
+
+				// One-finger drag past slop → left-button drag (box select / order drag).
+				// NEVER emit Scroll here — Scroll is map-zoom in WorldInteractionController.
+				if (moved > TapSlop)
+				{
+					if (!singleDragging)
+					{
+						singleDragging = true;
+						Enqueue(MouseInputEvent.Down, PrimaryButton(), new int2(primary.X, primary.Y), 1);
+					}
+
+					if (Math.Abs(dx) > 0 || Math.Abs(dy) > 0)
+						Enqueue(MouseInputEvent.Move, PrimaryButton(), new int2(x, y), 1);
+				}
+			}
+			else if (active.Count == 2)
+			{
+				var a = active[0];
+				var b = active[1];
+				var mid = Mid(a, b);
+				var dist = Dist(a, b);
+
+				// Pinch zoom only when distance changes enough (GeneralsZH pinch/anchor zoom)
+				if (lastPinchDist > 1f)
+				{
+					var ratio = dist / lastPinchDist;
+					if (Math.Abs(ratio - 1f) > 0.03f)
+						lock (queueLock) zoomQueue.Enqueue(ratio);
+				}
+				lastPinchDist = dist;
+
+				// Two-finger pan: midpoint translation → middle-button drag (camera)
+				var mdx = mid.X - twoFingerMid.X;
+				var mdy = mid.Y - twoFingerMid.Y;
+				if (twoFingerPanActive && (Math.Abs(mdx) > 0 || Math.Abs(mdy) > 0))
+				{
+					// Delta is movement; Location is current midpoint
+					lock (queueLock)
+						mouseQueue.Enqueue(new MouseInput(
+							MouseInputEvent.Move, MouseButton.Middle,
+							mid, new int2(mdx, mdy), Modifiers.None, 0));
+				}
+
+				// Stable-distance two-finger vertical drag → UI scroll (menus only useful
+				// when ScrollPanel is under the pointer — world ignores small scroll if
+				// zoom threshold not met; still better than one-finger zoom).
+				if (Math.Abs(dist - twoFingerDist) < 12f && Math.Abs(mdy) > Math.Abs(mdx) && Math.Abs(mdy) > PanSlop)
 				{
 					var scale = 1f;
 					try
@@ -224,34 +288,17 @@ namespace OpenRA.Platforms.Android
 							scale = Math.Max(1f, win.EffectiveWindowScale);
 					}
 					catch { /* ignore */ }
-
-					// ~4 logical px finger ≈ 1 scroll unit at 100%; slower at higher UIScale
-					var scrollDy = (int)Math.Round(dy / (10f * scale));
+					var scrollDy = (int)Math.Round(mdy / (10f * scale));
 					if (scrollDy == 0)
-						scrollDy = dy > 0 ? 1 : -1;
-					// Cap per-event jump (wheel is typically small steps)
+						scrollDy = mdy > 0 ? 1 : -1;
 					if (scrollDy > 12) scrollDy = 12;
 					if (scrollDy < -12) scrollDy = -12;
-
 					lock (queueLock)
-						scrollQueue.Enqueue((lastPointerLogical, new int2(0, scrollDy)));
+						scrollQueue.Enqueue((mid, new int2(0, scrollDy)));
 				}
-				else if (Math.Abs(dx) > PanSlop || Math.Abs(dy) > PanSlop)
-				{
-					lock (queueLock) panQueue.Enqueue(new int2(dx, dy));
-				}
-			}
-			else if (active.Count == 2)
-			{
-				boxEnd = new int2(active[1].X, active[1].Y);
-				var d = Dist(active[0], active[1]);
-				if (lastPinchDist > 1f)
-				{
-					var ratio = d / lastPinchDist;
-					if (Math.Abs(ratio - 1f) > 0.02f)
-						lock (queueLock) zoomQueue.Enqueue(ratio);
-				}
-				lastPinchDist = d;
+
+				twoFingerMid = mid;
+				twoFingerDist = dist;
 			}
 		}
 
@@ -264,53 +311,64 @@ namespace OpenRA.Platforms.Android
 			var pt = active[i];
 			active.RemoveAt(i);
 
-			if (active.Count == 0 && primary.Id == id)
+			if (active.Count == 1 && twoFingerPanActive)
 			{
-				var held = timeMs - pt.DownMs;
-				var moved = Math.Abs(x - pt.X) + Math.Abs(y - pt.Y);
-				var loc = new int2(x, y);
-
-				if (held >= LongPressMs && moved <= TapSlop)
-				{
-					// Long-press = secondary/command (Right for Modern/OtherRTS/RW, Left for Classic)
-					var cmd = CommandButton();
-					Enqueue(MouseInputEvent.Down, cmd, loc, 1);
-					Enqueue(MouseInputEvent.Up, cmd, loc, 1);
-				}
-				else if (moved <= TapSlop)
-				{
-					var multi = 1;
-					if (timeMs - lastTapMs <= DoubleTapMs &&
-					    Math.Abs(x - lastTapPos.X) <= DoubleTapSlop &&
-					    Math.Abs(y - lastTapPos.Y) <= DoubleTapSlop)
-						multi = 2;
-
-					var mods = multi > 1 ? Modifiers.Ctrl : Modifiers.None;
-					// Tap = primary/select (always Left in all OpenRA schemes)
-					Enqueue(MouseInputEvent.Down, PrimaryButton(), loc, multi, mods);
-					Enqueue(MouseInputEvent.Up, PrimaryButton(), loc, multi, mods);
-					lastTapMs = timeMs;
-					lastTapPos = loc;
-				}
-			}
-			else if (boxSelectActive && active.Count < 2)
-			{
-				// Two-finger box select: emit drag selection
-				var a = boxStart;
-				var b = boxEnd;
-				Enqueue(MouseInputEvent.Down, MouseButton.Left, a, 1);
-				Enqueue(MouseInputEvent.Move, MouseButton.Left, b, 1);
-				Enqueue(MouseInputEvent.Up, MouseButton.Left, b, 1);
-				boxSelectActive = false;
+				// Lifted one of two fingers — end middle pan
+				Enqueue(MouseInputEvent.Up, MouseButton.Middle, twoFingerMid, 1);
+				twoFingerPanActive = false;
+				primary = active[0];
+				return;
 			}
 
 			if (active.Count == 0)
 			{
+				if (twoFingerPanActive)
+				{
+					Enqueue(MouseInputEvent.Up, MouseButton.Middle, twoFingerMid, 1);
+					twoFingerPanActive = false;
+				}
+				else if (singleDragging)
+				{
+					Enqueue(MouseInputEvent.Up, PrimaryButton(), new int2(x, y), 1);
+					singleDragging = false;
+				}
+				else if (primary.Id == id)
+				{
+					var held = timeMs - pt.DownMs;
+					var moved = Math.Abs(x - pt.X) + Math.Abs(y - pt.Y);
+					var loc = new int2(x, y);
+
+					if (held >= LongPressMs && moved <= TapSlop)
+					{
+						// Long-press = command (Right in Modern / OtherRTS / RustedWarfare)
+						var cmd = CommandButton();
+						Enqueue(MouseInputEvent.Down, cmd, loc, 1);
+						Enqueue(MouseInputEvent.Up, cmd, loc, 1);
+					}
+					else if (moved <= TapSlop)
+					{
+						var multi = 1;
+						if (timeMs - lastTapMs <= DoubleTapMs &&
+						    Math.Abs(x - lastTapPos.X) <= DoubleTapSlop &&
+						    Math.Abs(y - lastTapPos.Y) <= DoubleTapSlop)
+							multi = 2;
+
+						var mods = multi > 1 ? Modifiers.Ctrl : Modifiers.None;
+						Enqueue(MouseInputEvent.Down, PrimaryButton(), loc, multi, mods);
+						Enqueue(MouseInputEvent.Up, PrimaryButton(), loc, multi, mods);
+						lastTapMs = timeMs;
+						lastTapPos = loc;
+					}
+				}
+
 				primary = default;
 				boxSelectActive = false;
+				singleDragging = false;
 			}
 			else if (active.Count == 1)
+			{
 				primary = active[0];
+			}
 		}
 
 		public void OnTouchCancel(int id)
@@ -319,10 +377,23 @@ namespace OpenRA.Platforms.Android
 			if (i >= 0) active.RemoveAt(i);
 			if (active.Count == 0)
 			{
+				if (twoFingerPanActive)
+				{
+					Enqueue(MouseInputEvent.Up, MouseButton.Middle, twoFingerMid, 1);
+					twoFingerPanActive = false;
+				}
+				if (singleDragging)
+				{
+					Enqueue(MouseInputEvent.Up, PrimaryButton(), lastPointerLogical, 1);
+					singleDragging = false;
+				}
 				primary = default;
 				boxSelectActive = false;
 			}
 		}
+
+		static int2 Mid(TouchPoint a, TouchPoint b)
+			=> new((a.X + b.X) / 2, (a.Y + b.Y) / 2);
 
 		void Enqueue(MouseInputEvent ev, MouseButton button, int2 loc, int multi, Modifiers mods = Modifiers.None)
 		{
