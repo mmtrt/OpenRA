@@ -868,8 +868,8 @@ namespace OpenRA.Platforms.Android
 				code = code.Replace("precision mediump float;", "precision highp float;");
 				if (!code.Contains("precision ", StringComparison.Ordinal))
 				{
-					var nl = code.IndexOf('
-');
+					var nl = code.IndexOf("
+");
 					if (nl >= 0)
 						code = code.Substring(0, nl + 1) + "precision highp float;" + Environment.NewLine + code.Substring(nl + 1);
 					else
