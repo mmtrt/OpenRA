@@ -1,11 +1,13 @@
 <Project>
-  <!-- Suppress OpenRA-Eluant linux-x64 lua51.so Content on Android (XA0101) -->
+  <!-- Suppress OpenRA-Eluant/OpenAL-CS linux-x64 native Content on Android (XA0101) -->
   <Target Name="RemoveEluantLinuxNativeOnAndroid"
           AfterTargets="ResolvePackageAssets;ResolveReferences"
           Condition="'$(OpenRAAndroid)' == 'true' OR $([System.String]::Copy('$(TargetFramework)').Contains('android'))">
     <ItemGroup>
       <Content Remove="@(Content)" Condition="$([System.String]::Copy('%(Identity)').Contains('lua51.so'))" />
       <ContentWithTargetPath Remove="@(ContentWithTargetPath)" Condition="$([System.String]::Copy('%(Identity)').Contains('lua51.so'))" />
+      <Content Remove="@(Content)" Condition="$([System.String]::Copy('%(Identity)').Contains('soft_oal.so'))" />
+      <ContentWithTargetPath Remove="@(ContentWithTargetPath)" Condition="$([System.String]::Copy('%(Identity)').Contains('soft_oal.so'))" />
       <None Remove="@(None)" Condition="$([System.String]::Copy('%(Identity)').Contains('lua51.so'))" />
     </ItemGroup>
   </Target>

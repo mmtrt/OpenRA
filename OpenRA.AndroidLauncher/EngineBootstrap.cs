@@ -597,11 +597,11 @@ namespace OpenRA.Android
 
 				try
 				{
-					Java.Lang.JavaSystem.Exit(0);
+					global::Java.Lang.JavaSystem.Exit(0);
 				}
 				catch
 				{
-					try { Android.OS.Process.KillProcess(Android.OS.Process.MyPid()); }
+					try { global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid()); }
 					catch { /* ignore */ }
 				}
 			});
