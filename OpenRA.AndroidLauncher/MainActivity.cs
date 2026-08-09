@@ -300,6 +300,16 @@ namespace OpenRA.Android
 
 		public bool OnTouch(View v, MotionEvent e)
 		{
+			try
+			{
+				if (v != null)
+				{
+					OpenRA.Platforms.Android.AndroidInput.ViewWidth = v.Width;
+					OpenRA.Platforms.Android.AndroidInput.ViewHeight = v.Height;
+				}
+			}
+			catch { /* ignore */ }
+
 			if (installView != null)
 				return true;
 

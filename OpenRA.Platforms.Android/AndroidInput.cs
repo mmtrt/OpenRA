@@ -54,16 +54,40 @@ namespace OpenRA.Platforms.Android
 		/// MotionEvent coords are surface pixels. OpenRA hit-testing uses EffectiveWindowSize
 		/// (logical) space. Divide by EffectiveWindowScale so buttons match when UIScale ≠ 1.
 		/// </summary>
+		// View-space size from MainActivity (MotionEvent is relative to the View).
+		// May differ from EGL surface size if the SurfaceView is letterboxed.
+		public static int ViewWidth;
+		public static int ViewHeight;
+
 		static void ToLogical(ref int x, ref int y)
 		{
 			var win = AndroidPlatformWindow.Current;
 			if (win == null)
 				return;
+
+			// 1) Map View pixels → surface/native pixels when the view is not 1:1 with EGL
+			var surf = win.SurfaceSize;
+			if (ViewWidth > 0 && ViewHeight > 0 && surf.Width > 0 && surf.Height > 0
+			    && (ViewWidth != surf.Width || ViewHeight != surf.Height))
+			{
+				x = (int)Math.Round(x * (double)surf.Width / ViewWidth);
+				y = (int)Math.Round(y * (double)surf.Height / ViewHeight);
+			}
+
+			// 2) Surface/native → EffectiveWindowSize (UIScale / scaleModifier)
 			var scale = win.EffectiveWindowScale;
-			if (scale <= 1e-6f || Math.Abs(scale - 1f) < 1e-6f)
-				return;
-			x = (int)Math.Round(x / scale);
-			y = (int)Math.Round(y / scale);
+			if (scale > 1e-6f && Math.Abs(scale - 1f) >= 1e-6f)
+			{
+				x = (int)Math.Round(x / scale);
+				y = (int)Math.Round(y / scale);
+			}
+
+			// 3) Clamp to logical window so hit-tests never miss off-by-one at edges
+			var eff = win.EffectiveWindowSize;
+			if (x < 0) x = 0;
+			if (y < 0) y = 0;
+			if (x >= eff.Width) x = eff.Width - 1;
+			if (y >= eff.Height) y = eff.Height - 1;
 		}
 
 		/// <summary>
@@ -398,7 +422,14 @@ namespace OpenRA.Platforms.Android
 		void Enqueue(MouseInputEvent ev, MouseButton button, int2 loc, int multi, Modifiers mods = Modifiers.None)
 		{
 			lock (queueLock)
+			{
+				// OpenRA tracks CursorPosition from Move events. Taps that only send
+				// Down/Up leave the cursor (and world order target) at the last Move
+				// location — so buildings place away from the finger. Always Move first.
+				if (ev == MouseInputEvent.Down || ev == MouseInputEvent.Up)
+					mouseQueue.Enqueue(new MouseInput(MouseInputEvent.Move, MouseButton.None, loc, int2.Zero, Modifiers.None, 0));
 				mouseQueue.Enqueue(new MouseInput(ev, button, loc, int2.Zero, mods, multi));
+			}
 		}
 
 		int IndexOf(int id)
