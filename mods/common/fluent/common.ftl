@@ -400,8 +400,8 @@ options-mouse-scroll-type =
 options-control-scheme =
     .classic = Classic
     .modern = Modern
-    .rustedwarfare = Rusted Warfare
     .otherrts = Other RTS
+    .rustedwarfare = Rusted Warfare
 
 ## SettingsLogic
 dialog-settings-save =
