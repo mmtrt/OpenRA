@@ -269,6 +269,18 @@ namespace OpenRA.Android
 				var path = Path.Combine(supportDir, "settings.yaml");
 				var w = Math.Max(1, AndroidEgl.SurfaceWidth);
 				var h = Math.Max(1, AndroidEgl.SurfaceHeight);
+
+				// CRITICAL: never overwrite an existing settings.yaml — that wiped every
+				// in-game Settings change on the next launch (player name, UIScale, etc.).
+				// OpenRA Settings.Save() writes this file; we only seed defaults once.
+				if (File.Exists(path))
+				{
+					EnsureAndroidRequiredSettings(path, w, h);
+					AndroidFileLog.Info("OpenRA.Bootstrap",
+						"settings.yaml preserved (exists) " + path);
+					return;
+				}
+
 				var nl = Environment.NewLine;
 				var tab = "	";
 				var yaml =
@@ -286,11 +298,49 @@ namespace OpenRA.Android
 					tab + "Device: Null" + nl;
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
-					"Wrote settings.yaml " + w + "x" + h + " DisableHardwareCursors=true");
+					"Seeded settings.yaml " + w + "x" + h + " path=" + path);
 			}
 			catch (Exception e)
 			{
 				AndroidFileLog.Warn("OpenRA.Bootstrap", "settings.yaml: " + e.Message);
+			}
+		}
+
+		/// <summary>
+		/// Patch only Android-required keys if missing; do not clobber user values.
+		/// </summary>
+		static void EnsureAndroidRequiredSettings(string path, int w, int h)
+		{
+			try
+			{
+				var text = File.ReadAllText(path);
+				var changed = false;
+				if (text.IndexOf("DisableHardwareCursors", StringComparison.Ordinal) < 0)
+				{
+					// Insert under Graphics: if present, else append
+					if (text.Contains("Graphics:"))
+						text = text.Replace("Graphics:", "Graphics:" + Environment.NewLine + "	DisableHardwareCursors: true");
+					else
+						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	DisableHardwareCursors: true" + Environment.NewLine;
+					changed = true;
+				}
+				if (text.IndexOf("GLProfile", StringComparison.Ordinal) < 0)
+				{
+					if (text.Contains("Graphics:"))
+						text = text.Replace("Graphics:", "Graphics:" + Environment.NewLine + "	GLProfile: Embedded");
+					else
+						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	GLProfile: Embedded" + Environment.NewLine;
+					changed = true;
+				}
+				if (changed)
+				{
+					File.WriteAllText(path, text);
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Patched required Android keys into settings.yaml");
+				}
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "EnsureAndroidRequiredSettings: " + e.Message);
 			}
 		}
 
