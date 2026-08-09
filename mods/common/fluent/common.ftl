@@ -400,6 +400,7 @@ options-mouse-scroll-type =
 options-control-scheme =
     .classic = Classic
     .modern = Modern
+    .rustedwarfare = Rusted Warfare
     .otherrts = Other RTS
 
 ## SettingsLogic
