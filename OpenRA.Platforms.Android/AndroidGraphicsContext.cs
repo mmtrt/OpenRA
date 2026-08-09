@@ -80,6 +80,8 @@ namespace OpenRA.Platforms.Android
 	/// </summary>
 	static class GlDiagnostics
 	{
+		public static bool Verbose;
+
 		static readonly HashSet<string> LoggedContexts = new();
 		static readonly object Gate = new();
 		static int totalErrors;
@@ -554,10 +556,8 @@ namespace OpenRA.Platforms.Android
 
 		int texture;
 		Size size;
-		// Default Nearest: OpenRA indexed sheets (terrain, units) store palette indices in a
-		// color channel. Linear filtering averages adjacent indices → near-black / fringing.
-		// World FBO texture is set to Linear explicitly by Renderer for the soft blit.
-		TextureScaleFilter scaleFilter = TextureScaleFilter.Nearest;
+		// Match desktop Texture default (Linear). Palette sheets forced Nearest in SetData.
+		TextureScaleFilter scaleFilter = TextureScaleFilter.Linear;
 
 		public Size Size => size;
 
@@ -764,8 +764,12 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlViewport(0, 0, size.Width, size.Height);
 			GLES20.GlClearColor(clearColor.R / 255f, clearColor.G / 255f, clearColor.B / 255f, clearColor.A / 255f);
 			GLES20.GlClear(GLES20.GlColorBufferBit | GLES20.GlDepthBufferBit);
-			GlDiagnostics.Check("FrameBuffer.Bind " + size.Width + "x" + size.Height);
-			GlDiagnostics.LogViewportState("FBO.Bind " + size.Width + "x" + size.Height);
+			// Avoid per-frame GL state dumps — they cost milliseconds and flooded graphics.log
+			if (GlDiagnostics.Verbose)
+			{
+				GlDiagnostics.Check("FrameBuffer.Bind " + size.Width + "x" + size.Height);
+				GlDiagnostics.LogViewportState("FBO.Bind " + size.Width + "x" + size.Height);
+			}
 		}
 
 		public void Unbind()
