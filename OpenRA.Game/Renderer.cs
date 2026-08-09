@@ -384,46 +384,57 @@ namespace OpenRA
 
 		public void DrawQuadBatch(ref Vertex[] vertices, IShader shader, int numVertices)
 		{
-			// One-time-ish diagnostic: scan for any quad (4 consecutive vertices) whose
-			// on-screen bounding box is implausibly large — the signature of a degenerate/
-			// garbled quad (e.g. a "streak" spanning most of the screen instead of a small
-			// sprite or a proper full-viewport rectangle). Cheap early-exit keeps this from
-			// costing anything once we've logged a handful of occurrences. Uses OpenRA's own
-			// Log (mirrored into AndroidFileLog on Android) rather than any platform-specific
-			// call, since this is shared code.
+			// One-time-ish diagnostic: scan for any quad (4 consecutive vertices) that's
+			// geometrically degenerate — the signature of a "streak" artifact (a rectangle
+			// collapsed to a thin sliver). Compares actual polygon area (shoelace formula)
+			// against its axis-aligned bounding box area, NOT just bounding box dimensions:
+			// a bounding-box-only check misses a *diagonal* sliver, since a rotated thin
+			// rectangle can have a bounding box that looks roughly square/proportional in
+			// both X and Y even though its real area is near zero. Cheap early-exit once
+			// we've logged a handful of occurrences. Uses OpenRA's own Log (mirrored into
+			// AndroidFileLog on Android) rather than any platform-specific call, since this
+			// is shared code.
 			if (loggedDegenerateQuads < 8)
 			{
 				for (var i = 0; i + 3 < numVertices; i += 4)
 				{
-					float minX = float.MaxValue, maxX = float.MinValue;
-					float minY = float.MaxValue, maxY = float.MinValue;
-					for (var j = 0; j < 4; j++)
-					{
-						var v = vertices[i + j];
-						if (v.X < minX) minX = v.X;
-						if (v.X > maxX) maxX = v.X;
-						if (v.Y < minY) minY = v.Y;
-						if (v.Y > maxY) maxY = v.Y;
-					}
+					var v0 = vertices[i];
+					var v1 = vertices[i + 1];
+					var v2 = vertices[i + 2];
+					var v3 = vertices[i + 3];
+
+					float minX = Math.Min(Math.Min(v0.X, v1.X), Math.Min(v2.X, v3.X));
+					float maxX = Math.Max(Math.Max(v0.X, v1.X), Math.Max(v2.X, v3.X));
+					float minY = Math.Min(Math.Min(v0.Y, v1.Y), Math.Min(v2.Y, v3.Y));
+					float maxY = Math.Max(Math.Max(v0.Y, v1.Y), Math.Max(v2.Y, v3.Y));
 
 					var w = maxX - minX;
 					var h = maxY - minY;
+					var bboxArea = w * h;
 
-					// A legitimate full-viewport blit (the world-sheet composite) can
-					// legitimately be large in BOTH axes — that's fine. What we're hunting
-					// for is a quad that's large in one axis but not the other (or has an
-					// implausible aspect ratio), which is what a "thin diagonal streak"
-					// actually is: a quad whose 4 corners aren't forming a sane rectangle.
-					var maxDim = Math.Max(w, h);
-					var minDim = Math.Min(w, h);
-					if (maxDim > 400 && (minDim < 2 || maxDim / Math.Max(minDim, 0.001f) > 50))
+					// Shoelace formula, assuming the 4 vertices are wound in quad order
+					// (matches how sprite quads are always built: consistent winding).
+					var shoelace =
+						(v0.X * v1.Y - v1.X * v0.Y) +
+						(v1.X * v2.Y - v2.X * v1.Y) +
+						(v2.X * v3.Y - v3.X * v2.Y) +
+						(v3.X * v0.Y - v0.X * v3.Y);
+					var quadArea = Math.Abs(shoelace) * 0.5f;
+
+					// A degenerate/sliver quad: spans a non-trivial bounding box (so it's not
+					// just a small, legitimately-thin normal sprite) but its actual area is
+					// tiny relative to that bounding box — i.e. most of the "rectangle" isn't
+					// really there, exactly what a diagonal streak is.
+					if (bboxArea > 40000 && quadArea < bboxArea * 0.05f)
 					{
 						loggedDegenerateQuads++;
 						Log.Write("graphics", "Degenerate quad #" + loggedDegenerateQuads +
 							" shader=" + shader.GetType().Name +
 							" verts=[" +
-							string.Join(" | ", vertices.Skip(i).Take(4).Select(v => $"({v.X:F1},{v.Y:F1},{v.Z:F1})")) +
-							"] bbox=" + w.ToString("F1") + "x" + h.ToString("F1"));
+							$"({v0.X:F1},{v0.Y:F1},{v0.Z:F1}) | ({v1.X:F1},{v1.Y:F1},{v1.Z:F1}) | " +
+							$"({v2.X:F1},{v2.Y:F1},{v2.Z:F1}) | ({v3.X:F1},{v3.Y:F1},{v3.Z:F1})" +
+							"] bbox=" + w.ToString("F1") + "x" + h.ToString("F1") +
+							" bboxArea=" + bboxArea.ToString("F0") + " quadArea=" + quadArea.ToString("F0"));
 
 						if (loggedDegenerateQuads >= 8)
 							break;
