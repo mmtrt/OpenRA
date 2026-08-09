@@ -567,6 +567,14 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var viewportSizes = Game.ModData.GetOrCreate<WorldViewportSizes>();
 			var maxScales = new float2(Game.Renderer.NativeResolution) / new float2(viewportSizes.MinEffectiveResolution);
 			var maxScale = Math.Min(maxScales.X, maxScales.Y);
+			#if ANDROID
+			// Phones are wide but short; height-based maxScale alone blocks 2.0+.
+			// Allow up to 2.5 when the physical panel is at least 1080p-class.
+			if (Game.Renderer.NativeResolution.Width >= 1920 && Game.Renderer.NativeResolution.Height >= 1080)
+				maxScale = Math.Max(maxScale, 2.5f);
+			else if (Game.Renderer.NativeResolution.Width >= 1280)
+				maxScale = Math.Max(maxScale, 2.0f);
+			#endif
 
 			var validScales = new[] { 1f, 1.25f, 1.5f, 1.75f, 2f, 2.25f, 2.5f }.Where(x => x <= maxScale + 0.001f);
 			dropdown.ShowDropDown("LABEL_DROPDOWN_TEMPLATE", 500, validScales, SetupItem);
