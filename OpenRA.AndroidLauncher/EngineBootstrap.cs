@@ -304,9 +304,9 @@ namespace OpenRA.Android
 							if (float.TryParse(v,
 								System.Globalization.NumberStyles.Float,
 								System.Globalization.CultureInfo.InvariantCulture,
-								out var s) && s >= 1f && s <= 3f)
+								out var yamlScale) && yamlScale >= 1f && yamlScale <= 3f)
 							{
-								fromYaml = s;
+								fromYaml = yamlScale;
 								break;
 							}
 						}
@@ -329,11 +329,11 @@ namespace OpenRA.Android
 
 			// Prefer the higher value so a stale pin cannot force 1.0 over a good yaml,
 			// and a stripped yaml still recovers from pin.
-			var s = Math.Max(fromYaml, fromPin);
+			var chosen = Math.Max(fromYaml, fromPin);
 			// First-run default when neither yaml nor pin has a value yet
-			if (s <= 1.0001f && fromYaml <= 1.0001f && fromPin <= 1.0001f)
+			if (chosen <= 1.0001f && fromYaml <= 1.0001f && fromPin <= 1.0001f)
 				return 1.75f;
-			return s;
+			return chosen;
 		}
 
 		static void WritePinnedUIScale(string supportDir, float scale)
