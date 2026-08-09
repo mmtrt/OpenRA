@@ -19,7 +19,7 @@ namespace OpenRA.Platforms.Android
 		public static AndroidPlatformWindow Current { get; private set; }
 
 		Size windowSize;
-		readonly float scaleModifier;
+		float scaleModifier;
 		readonly GLProfile glProfile;
 		readonly AndroidInput input = new();
 		readonly AndroidGraphicsContext graphicsContext = new();
@@ -50,12 +50,21 @@ namespace OpenRA.Platforms.Android
 		public IGraphicsContext Context => graphicsContext;
 
 		public Size NativeWindowSize => windowSize;
+
+		// Match Sdl2PlatformWindow: logical size shrinks as UIScale (scaleModifier) grows
+		// so widgets are larger relative to the screen.
 		public Size EffectiveWindowSize => new(
 			Math.Max(1, (int)(windowSize.Width / scaleModifier)),
 			Math.Max(1, (int)(windowSize.Height / scaleModifier)));
 
+		// DPI scale (Android surface pixels == "native" points for our EGL path).
 		public float NativeWindowScale => 1.0f;
-		public float EffectiveWindowScale => NativeWindowScale / scaleModifier;
+
+		// Desktop: EffectiveWindowScale = windowScale * scaleModifier
+		// (was wrongly NativeWindowScale / scaleModifier → content stuck in a corner when UIScale≠1)
+		public float EffectiveWindowScale => NativeWindowScale * scaleModifier;
+
+		// GL drawable size in pixels (full panel).
 		public Size SurfaceSize => NativeWindowSize;
 
 		public int DisplayCount => 1;
@@ -138,7 +147,30 @@ namespace OpenRA.Platforms.Android
 		public void SetHardwareCursor(IHardwareCursor cursor) { }
 		public void SetWindowTitle(string title) { }
 		public void SetRelativeMouseMode(bool mode) { }
-		public void SetScaleModifier(float scale) { }
+		public void SetScaleModifier(float scale)
+		{
+			if (scale <= 0f)
+				scale = 1f;
+			if (Math.Abs(scaleModifier - scale) < 1e-6f)
+				return;
+			var oldMod = scaleModifier;
+			scaleModifier = scale;
+			var native = NativeWindowScale;
+			try
+			{
+				// (oldNative, oldEffective, newNative, newEffective) — match desktop event
+				OnWindowScaleChanged?.Invoke(
+					native, native * oldMod,
+					native, native * scaleModifier);
+			}
+			catch { /* ignore */ }
+
+			AndroidPlatformLog.Info("OpenRA.GL.View",
+				"SetScaleModifier " + oldMod + " → " + scaleModifier
+				+ " effective=" + EffectiveWindowSize.Width + "x" + EffectiveWindowSize.Height
+				+ " surface=" + SurfaceSize.Width + "x" + SurfaceSize.Height
+				+ " effScale=" + EffectiveWindowScale);
+		}
 
 		public void Dispose()
 		{

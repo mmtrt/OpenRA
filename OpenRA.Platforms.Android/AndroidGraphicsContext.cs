@@ -271,6 +271,28 @@ namespace OpenRA.Platforms.Android
 		{
 			if (width < 0) width = 0;
 			if (height < 0) height = 0;
+
+			// Match Sdl2GraphicsContext: layout coords are EffectiveWindowSize;
+			// GL scissor is surface pixels. Scale by EffectiveWindowScale when they differ.
+			var window = AndroidPlatformWindow.Current;
+			if (window != null)
+			{
+				var effective = window.EffectiveWindowSize;
+				var surface = window.SurfaceSize;
+				if (effective.Width != surface.Width || effective.Height != surface.Height)
+				{
+					var scale = window.EffectiveWindowScale;
+					if (scale <= 0f)
+						scale = 1f;
+					x = (int)Math.Round(scale * x);
+					y = (int)Math.Round(scale * y);
+					width = (int)Math.Round(scale * width);
+					height = (int)Math.Round(scale * height);
+				}
+			}
+			if (width < 1) width = 1;
+			if (height < 1) height = 1;
+
 			GLES20.GlEnable(GLES20.GlScissorTest);
 			GLES20.GlScissor(x, y, width, height);
 			scissorLogCount++;
