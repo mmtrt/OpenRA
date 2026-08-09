@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.Traits;
@@ -118,7 +119,16 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			mouseControlDropdown.OnMouseDown = _ => InputSettingsLogic.ShowMouseControlDropdown(mouseControlDropdown, controlTypes, gameSettings);
 			mouseControlDropdown.GetText = () => controlTypes[gameSettings.MouseControlStyle];
 
-			foreach (var container in new[] { mouseControlDescClassic, mouseControlDescModern, mouseControlDescOtherRTS }.Concat(mouseControlDescRustedWarfare != null ? new[] { mouseControlDescRustedWarfare } : Array.Empty<Widget>()))
+			var mouseControlDescContainers = new List<Widget>
+			{
+				mouseControlDescClassic,
+				mouseControlDescModern,
+				mouseControlDescOtherRTS
+			};
+			if (mouseControlDescRustedWarfare != null)
+				mouseControlDescContainers.Add(mouseControlDescRustedWarfare);
+
+			foreach (var container in mouseControlDescContainers)
 			{
 				var classicScrollRight = container.Get("DESC_SCROLL_RIGHT");
 				classicScrollRight.IsVisible = () => (gameSettings.MouseControlStyle == MouseControlStyle.Classic) ^ gameSettings.UseAlternateScrollButton;
