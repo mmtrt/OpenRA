@@ -293,6 +293,9 @@ namespace OpenRA.Platforms.Default
 		public delegate uint CreateProgram();
 		public static CreateProgram glCreateProgram { get; private set; }
 
+		public delegate void DeleteProgram(uint program);
+		public static DeleteProgram glDeleteProgram { get; private set; }
+
 		public delegate void UseProgram(uint program);
 		public static UseProgram glUseProgram { get; private set; }
 
@@ -573,6 +576,7 @@ namespace OpenRA.Platforms.Default
 				glClearColor = Bind<ClearColor>("glClearColor");
 				glFinish = Bind<Finish>("glFinish");
 				glCreateProgram = Bind<CreateProgram>("glCreateProgram");
+				glDeleteProgram = Bind<DeleteProgram>("glDeleteProgram");
 				glUseProgram = Bind<UseProgram>("glUseProgram");
 				glGetProgramiv = Bind<GetProgramiv>("glGetProgramiv");
 				glCreateShader = Bind<CreateShader>("glCreateShader");
