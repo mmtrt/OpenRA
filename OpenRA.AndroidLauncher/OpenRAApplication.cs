@@ -4,6 +4,7 @@
 using System;
 using System.Threading.Tasks;
 using Android.App;
+using Android.Content;
 using Android.Runtime;
 using OpenRA.Platforms.Android;
 
@@ -66,6 +67,33 @@ namespace OpenRA.Android
 				try { global::Android.Util.Log.Error("OpenRA.App", "OnCreate failed: " + e); }
 				catch { /* ignore */ }
 			}
+		}
+
+		public override void OnTrimMemory(TrimMemory level)
+		{
+			base.OnTrimMemory(level);
+			try
+			{
+				BootLog.Info("OnTrimMemory " + level);
+				// Only heavy GC on serious pressure — avoid hitching during play on moderate levels
+				if (level == TrimMemory.RunningCritical || level == TrimMemory.Complete
+				    || level == TrimMemory.ModComplete || level == TrimMemory.RunningLow)
+				{
+					GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized, false);
+				}
+			}
+			catch { /* ignore */ }
+		}
+
+		public override void OnLowMemory()
+		{
+			base.OnLowMemory();
+			try
+			{
+				BootLog.Info("OnLowMemory");
+				GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized, false);
+			}
+			catch { /* ignore */ }
 		}
 	}
 }

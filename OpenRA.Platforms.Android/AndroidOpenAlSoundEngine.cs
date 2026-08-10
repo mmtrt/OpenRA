@@ -57,6 +57,8 @@ namespace OpenRA.Platforms.Android
 
 		readonly Dictionary<uint, PoolSlot> sourcePool = new(PoolSize);
 		float volume = 1f;
+		float duckGain = 1f;
+		bool deviceSuspended;
 		IntPtr device;
 		IntPtr context;
 
@@ -146,6 +148,46 @@ namespace OpenRA.Platforms.Android
 				}
 
 				sourcePool.Add(source, new PoolSlot() { IsActive = false });
+			}
+
+			AndroidAudioBridge.SetSuspended = SetDeviceSuspended;
+			AndroidAudioBridge.SetDuckGain = SetDuckGainInternal;
+		}
+
+		void SetDuckGainInternal(float g)
+		{
+			duckGain = Math.Clamp(g, 0f, 1f);
+			AL10.alListenerf(AL10.AL_GAIN, volume * duckGain);
+		}
+
+		/// <summary>
+		/// Pause all sources and detach the ALC context while the activity is in the background
+		/// or audio focus is lost. Restores context + unpauses on resume.
+		/// </summary>
+		void SetDeviceSuspended(bool suspend)
+		{
+			if (suspend == deviceSuspended)
+				return;
+			deviceSuspended = suspend;
+			try
+			{
+				if (suspend)
+				{
+					SetAllSoundsPaused(true);
+					if (context != IntPtr.Zero)
+						ALC10.alcMakeContextCurrent(IntPtr.Zero);
+				}
+				else
+				{
+					if (context != IntPtr.Zero)
+						ALC10.alcMakeContextCurrent(context);
+					AL10.alListenerf(AL10.AL_GAIN, volume * duckGain);
+					SetAllSoundsPaused(false);
+				}
+			}
+			catch (Exception e)
+			{
+				Log.Write("sound", "SetDeviceSuspended(" + suspend + "): " + e.Message);
 			}
 		}
 
@@ -274,7 +316,7 @@ namespace OpenRA.Platforms.Android
 		public float Volume
 		{
 			get => volume;
-			set => AL10.alListenerf(AL10.AL_GAIN, volume = value);
+			set => AL10.alListenerf(AL10.AL_GAIN, (volume = value) * duckGain);
 		}
 
 		public void PauseSound(ISound sound, bool paused)
@@ -369,6 +411,9 @@ namespace OpenRA.Platforms.Android
 
 		void Dispose(bool disposing)
 		{
+			AndroidAudioBridge.SetSuspended = null;
+			AndroidAudioBridge.SetDuckGain = null;
+
 			if (disposing)
 				StopAllSounds();
 

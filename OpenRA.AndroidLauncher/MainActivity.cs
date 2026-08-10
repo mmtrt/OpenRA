@@ -36,6 +36,7 @@ namespace OpenRA.Android
 		bool bootstrapAttempted;
 		bool engineStartRequested;
 		CancellationTokenSource installCts;
+		AndroidAudioFocus audioFocus;
 		const int StoragePermissionRequest = 1001;
 
 		protected override void OnCreate(Bundle savedInstanceState)
@@ -62,10 +63,20 @@ namespace OpenRA.Android
 				// Native libs deferred until engine start — LoadLibrary in OnCreate can abort the process
 				AndroidFileLog.Info("OpenRA.Main", "Building UI");
 
-				Window.AddFlags(WindowManagerFlags.Fullscreen);
-				if (Window.DecorView != null)
-					Window.DecorView.SystemUiFlags =
-						SystemUiFlags.HideNavigation | SystemUiFlags.Fullscreen | SystemUiFlags.ImmersiveSticky;
+				ApplyImmersiveMode();
+				try { VolumeControlStream = Android.Media.Stream.Music; } catch { /* ignore */ }
+				try
+				{
+					// Keep screen on during play; avoid thermal throttling surprises mid-match
+					Window.AddFlags(WindowManagerFlags.KeepScreenOn | WindowManagerFlags.Fullscreen);
+					if ((int)Build.VERSION.SdkInt >= 28 && Window.Attributes != null)
+					{
+						var lp = Window.Attributes;
+						lp.LayoutInDisplayCutoutMode = Android.Views.LayoutInDisplayCutoutMode.ShortEdges;
+						Window.Attributes = lp;
+					}
+				}
+				catch { /* older API */ }
 
 				root = new FrameLayout(this);
 				surfaceView = new GameSurfaceView(this);
@@ -96,6 +107,13 @@ namespace OpenRA.Android
 					OpenRA.Platforms.Android.AndroidKeyboardBridge.SetWanted = AndroidSoftKeyboard.SetWanted;
 				}
 				catch (Exception e) { AndroidFileLog.Warn("OpenRA.Main", "SoftKeyboard: " + e.Message); }
+
+				try
+				{
+					audioFocus = new AndroidAudioFocus(this);
+					audioFocus.Start();
+				}
+				catch (Exception e) { AndroidFileLog.Warn("OpenRA.Main", "AudioFocus: " + e.Message); }
 
 				statusOverlay = new TextView(this)
 				{
@@ -365,7 +383,10 @@ namespace OpenRA.Android
 		protected override void OnResume()
 		{
 			base.OnResume();
+			ApplyImmersiveMode();
 			try { PlatformWindow?.SetSuspended(false); } catch { /* ignore */ }
+			try { OpenRA.Platforms.Android.AndroidAudioBridge.SetSuspended?.Invoke(false); } catch { /* ignore */ }
+			try { audioFocus?.Start(); } catch { /* ignore */ }
 			AndroidFileLog.Info("OpenRA.Main", "OnResume");
 
 			if (installView != null && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
@@ -419,8 +440,34 @@ namespace OpenRA.Android
 		protected override void OnPause()
 		{
 			base.OnPause();
-			PlatformWindow?.SetSuspended(true);
+			try { PlatformWindow?.SetSuspended(true); } catch { /* ignore */ }
+			// Pause OpenAL + detach context so we do not burn CPU/battery in background
+			try { OpenRA.Platforms.Android.AndroidAudioBridge.SetSuspended?.Invoke(true); } catch { /* ignore */ }
 			AndroidFileLog.Info("OpenRA.Main", "OnPause");
+		}
+
+		public override void OnWindowFocusChanged(bool hasFocus)
+		{
+			base.OnWindowFocusChanged(hasFocus);
+			if (hasFocus)
+				ApplyImmersiveMode();
+		}
+
+		void ApplyImmersiveMode()
+		{
+			try
+			{
+				if (Window?.DecorView == null)
+					return;
+				Window.DecorView.SystemUiFlags =
+					SystemUiFlags.HideNavigation
+					| SystemUiFlags.Fullscreen
+					| SystemUiFlags.ImmersiveSticky
+					| SystemUiFlags.LayoutStable
+					| SystemUiFlags.LayoutHideNavigation
+					| SystemUiFlags.LayoutFullscreen;
+			}
+			catch { /* ignore */ }
 		}
 
 		protected override void OnDestroy()
@@ -429,6 +476,7 @@ namespace OpenRA.Android
 				Current = null;
 			installCts?.Cancel();
 			AndroidFileLog.Info("OpenRA.Main", "OnDestroy");
+			try { audioFocus?.Stop(); } catch { /* ignore */ }
 			try { EngineBootstrap.Stop(); }
 			catch { /* ignore */ }
 			try { OpenRA.Platforms.Android.AndroidEgl.Destroy(); }
