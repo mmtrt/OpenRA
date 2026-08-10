@@ -773,12 +773,14 @@ namespace OpenRA.Platforms.Default
 		readonly Action<object> setVec3;
 		readonly Action<object> setVec4;
 		readonly Action bind;
+		readonly Action dispose;
 
 		public ThreadedShader(ThreadedGraphicsContext device, IShader shader)
 		{
 			this.device = device;
 			bind = shader.Bind;
 			prepareRender = shader.PrepareRender;
+			dispose = shader.Dispose;
 			setBool = tuple => { var t = ((string, bool))tuple; shader.SetBool(t.Item1, t.Item2); };
 			setMatrix = tuple => { var t = ((string, float[]))tuple; shader.SetMatrix(t.Item1, t.Item2); };
 			setTexture = tuple => { var t = ((string, ITexture))tuple; shader.SetTexture(t.Item1, t.Item2); };
@@ -831,6 +833,15 @@ namespace OpenRA.Platforms.Default
 		public void SetVec(string name, float x, float y, float z)
 		{
 			device.Post(setVec4, (name, x, y, z));
+		}
+
+		public void Dispose()
+		{
+			// See AndroidShader.Dispose / OpenRA.Platforms.Default/Shader.cs.Dispose for
+			// context. Must be marshaled onto the device thread like every other GL call
+			// here, since the underlying program can only be deleted from the thread that
+			// owns the GL context.
+			device.Post(dispose);
 		}
 	}
 }
