@@ -86,7 +86,7 @@ namespace OpenRA.Mods.Common.Widgets
 		{
 			mousePos = worldRenderer.Viewport.ViewToWorldPx(mi.Location);
 
-			var useClassicMouseStyle = gameSettings.MouseControlStyle == MouseControlStyle.Classic;
+			var useClassicMouseStyle = gameSettings.MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.RustedWarfare;
 			var actionButton = World.OrderGenerator.ActionButton;
 
 			var multiClick = mi.MultiTapCount >= 2;

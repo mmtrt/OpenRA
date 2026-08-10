@@ -7,8 +7,8 @@
  *   Classic      — left does select+command; long-press / two-finger = right pan
  *   Modern       — left select; long-press = right command/confirm
  *   OtherRTS     — left select + confirm; long-press = right command
- *   RustedWarfare— RW mobile model (tap select, long-press command, 1-finger box,
- *                  two-finger pan, pinch zoom, double-tap select-all)
+ *   RustedWarfare— Classic-based + mobile gestures (tap select+command, long-press
+ *                  right/cancel, 1-finger box, two-finger pan, pinch, double-tap)
  */
 #endregion
 
@@ -28,7 +28,6 @@ namespace OpenRA.Platforms.Android
 		readonly List<TouchPoint> active = new();
 		TouchPoint primary;
 		float lastPinchDist;
-		bool boxSelectActive;
 		bool singleDragging;
 		bool twoFingerPanActive;
 		int2 twoFingerMid;
@@ -111,26 +110,31 @@ namespace OpenRA.Platforms.Android
 		static MouseButton PrimaryButton() => MouseButton.Left;
 
 		/// <summary>
-		/// Contextual command button per scheme (mirrors GameSettings.ResolveActionButton):
-		/// Classic = Left (same as primary); Modern / OtherRTS / RW = Right.
+		/// Contextual command button per scheme (mirrors GameSettings.ResolveActionButton).
+		/// Classic + RustedWarfare = Left (same as primary); Modern / OtherRTS = Right.
 		/// </summary>
 		static MouseButton CommandButton(Scheme scheme)
-			=> scheme == Scheme.Classic ? MouseButton.Left : MouseButton.Right;
+			=> scheme is Scheme.Classic or Scheme.RustedWarfare ? MouseButton.Left : MouseButton.Right;
 
 		/// <summary>
-		/// Camera pan button: Classic defaults to Right; others use Middle (standard
-		/// middle-drag scroll). Alternate-scroll users can still remap in settings.
+		/// Camera pan button: Classic + RW default to Right; Modern/OtherRTS use Middle.
 		/// </summary>
 		static MouseButton PanButton(Scheme scheme)
-			=> scheme == Scheme.Classic ? MouseButton.Right : MouseButton.Middle;
+			=> scheme is Scheme.Classic or Scheme.RustedWarfare ? MouseButton.Right : MouseButton.Middle;
 
 		/// <summary>
-		/// Long-press issues a command click only for schemes where command ≠ primary.
-		/// Classic commands with left (already covered by tap) — long-press is unused
-		/// for orders there (two-finger / right-pan covers scroll instead).
+		/// Long-press = Right click only when command is not already on Left.
+		/// Classic + RW command with left (tap) — long-press becomes Right (cancel / alternate).
+		/// Modern / OtherRTS: long-press = Right command.
 		/// </summary>
 		static bool LongPressIsCommand(Scheme scheme)
-			=> scheme is Scheme.Modern or Scheme.OtherRTS or Scheme.RustedWarfare;
+			=> scheme is Scheme.Modern or Scheme.OtherRTS;
+
+		/// <summary>
+		/// Classic + RW: long-press issues a Right click (cancel / alternate / scroll-button).
+		/// </summary>
+		static bool LongPressIsRightClick(Scheme scheme)
+			=> scheme is Scheme.Classic or Scheme.RustedWarfare;
 
 		/// <summary>
 		/// Double-tap → select-all-of-type is the RW mobile convention and is useful
@@ -196,6 +200,18 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
+		/// <summary>Drop pending events when no input handler is attached this frame.</summary>
+		public void ClearFrame()
+		{
+			lock (queueLock)
+			{
+				mouseQueue.Clear();
+				zoomQueue.Clear();
+				panQueue.Clear();
+				scrollQueue.Clear();
+			}
+		}
+
 		public IReadOnlyCollection<MouseInput> PendingMouse
 		{
 			get { lock (queueLock) return mouseQueue.ToArray(); }
@@ -215,7 +231,6 @@ namespace OpenRA.Platforms.Android
 			if (active.Count == 1)
 			{
 				primary = active[0];
-				boxSelectActive = false;
 				singleDragging = false;
 			}
 			else if (active.Count == 2)
@@ -227,7 +242,6 @@ namespace OpenRA.Platforms.Android
 					singleDragging = false;
 				}
 
-				boxSelectActive = false;
 				var scheme = CurrentScheme();
 				twoFingerPanActive = true;
 				twoFingerMid = Mid(active[0], active[1]);
@@ -259,7 +273,6 @@ namespace OpenRA.Platforms.Android
 				{
 					// One-finger drag past slop → left-button drag (box select / order drag).
 					singleDragging = true;
-					boxSelectActive = true;
 					Enqueue(MouseInputEvent.Down, PrimaryButton(), new int2(primary.X, primary.Y), 1);
 				}
 
@@ -343,12 +356,21 @@ namespace OpenRA.Platforms.Android
 					var moved = Math.Abs(x - pt.X) + Math.Abs(y - pt.Y);
 					var loc = new int2(x, y);
 
-					if (held >= LongPressMs && moved <= TapSlop && LongPressIsCommand(scheme))
+					if (held >= LongPressMs && moved <= TapSlop)
 					{
-						// Modern / OtherRTS / RustedWarfare only: long-press = command button
-						var cmd = CommandButton(scheme);
-						Enqueue(MouseInputEvent.Down, cmd, loc, 1);
-						Enqueue(MouseInputEvent.Up, cmd, loc, 1);
+						if (LongPressIsCommand(scheme))
+						{
+							// Modern / OtherRTS: long-press = command (Right)
+							var cmd = CommandButton(scheme);
+							Enqueue(MouseInputEvent.Down, cmd, loc, 1);
+							Enqueue(MouseInputEvent.Up, cmd, loc, 1);
+						}
+						else if (LongPressIsRightClick(scheme))
+						{
+							// Classic + RustedWarfare: long-press = Right (cancel / alternate)
+							Enqueue(MouseInputEvent.Down, MouseButton.Right, loc, 1);
+							Enqueue(MouseInputEvent.Up, MouseButton.Right, loc, 1);
+						}
 					}
 					else if (moved <= TapSlop)
 					{
@@ -369,7 +391,6 @@ namespace OpenRA.Platforms.Android
 				}
 
 				primary = default;
-				boxSelectActive = false;
 				singleDragging = false;
 			}
 			else if (active.Count == 1)
@@ -396,7 +417,6 @@ namespace OpenRA.Platforms.Android
 					singleDragging = false;
 				}
 				primary = default;
-				boxSelectActive = false;
 			}
 		}
 

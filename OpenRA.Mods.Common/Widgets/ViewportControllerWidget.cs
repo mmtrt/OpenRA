@@ -315,7 +315,8 @@ namespace OpenRA.Mods.Common.Widgets
 			}
 
 			var gs = Game.Settings.Game;
-			var scrollButton = gs.MouseControlStyle == MouseControlStyle.Classic ^ gs.UseAlternateScrollButton ? MouseButton.Right : MouseButton.Middle;
+			var isClassicLike = gs.MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.RustedWarfare;
+			var scrollButton = isClassicLike ^ gs.UseAlternateScrollButton ? MouseButton.Right : MouseButton.Middle;
 			var scrollType = mi.Button.HasFlag(scrollButton) ? gs.MouseScroll : MouseScrollType.Disabled;
 
 			if (scrollType == MouseScrollType.Disabled)

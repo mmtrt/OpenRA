@@ -101,7 +101,7 @@ namespace OpenRA.Mods.Common.Orders
 			viewport = worldRenderer.Viewport;
 			gameSettings = Game.Settings.Game;
 
-			if (gameSettings.MouseControlStyle == MouseControlStyle.Classic)
+			if (gameSettings.MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.RustedWarfare)
 				world.Selection.Clear();
 
 			var variants = new List<VariantWrapper>()

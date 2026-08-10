@@ -455,17 +455,18 @@ label-mouse-control-desc-modern-scroll-right = - Pan the battlefield using the <
 label-mouse-control-desc-modern-scroll-middle = - Pan the battlefield using the <Middle> mouse button
 label-mouse-control-desc-modern-edgescroll = or by moving the cursor to the edge of the screen
 label-mouse-control-desc-rustedwarfare-selection = - Select units using a <single tap> (Left click)
-label-mouse-control-desc-rustedwarfare-commands = - Command units using a <long press> (Right click)
-label-mouse-control-desc-rustedwarfare-orders = - Confirm orders using a <long press> (Right click)
+label-mouse-control-desc-rustedwarfare-commands = - Command units using a <single tap> (Left click)
+label-mouse-control-desc-rustedwarfare-orders = - Confirm orders using a <single tap> (Left click)
 label-mouse-control-desc-rustedwarfare-buildings = - Place structures using a <single tap> (Left click)
 label-mouse-control-desc-rustedwarfare-support = - Target support powers using a <single tap> (Left click)
 label-mouse-control-desc-rustedwarfare-zoom = - Zoom the battlefield using a <pinch gesture>
 label-mouse-control-desc-rustedwarfare-zoom-modifier = - Zoom the battlefield using a <pinch gesture>
-label-mouse-control-desc-rustedwarfare-scroll-right = - Pan using <two-finger drag> or the screen edge
-label-mouse-control-desc-rustedwarfare-scroll-middle = - Pan using <two-finger drag> or the screen edge
+label-mouse-control-desc-rustedwarfare-scroll-right = - Pan using <two-finger drag> (Right mouse)
+label-mouse-control-desc-rustedwarfare-scroll-middle = - Pan using <two-finger drag> (Middle mouse)
 label-mouse-control-desc-rustedwarfare-edgescroll = or by moving to the edge of the screen
 label-mouse-control-desc-rustedwarfare-box = - Box-select units using a <one-finger drag>
 label-mouse-control-desc-rustedwarfare-double = - Select all of a type using a <double tap>
+label-mouse-control-desc-rustedwarfare-alternate = - Alternate / cancel using a <long press> (Right click)
 checkbox-edgescroll-container = Screen Edge Panning
 
 ## mainmenu.yaml

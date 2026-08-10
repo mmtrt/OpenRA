@@ -365,12 +365,12 @@ namespace OpenRA
 			switch (actionType)
 			{
 				case MouseActionType.ConfirmOrder:
-					// Modern + RustedWarfare: right-click confirm; Classic + OtherRTS: left
-					return MouseControlStyle is MouseControlStyle.Modern or MouseControlStyle.RustedWarfare
+					// Modern: right-click confirm; Classic + OtherRTS + RustedWarfare: left
+					return MouseControlStyle == MouseControlStyle.Modern
 						? MouseButton.Right : MouseButton.Left;
 				case MouseActionType.Contextual:
-					// Classic: left; Modern / OtherRTS / RustedWarfare: right
-					return MouseControlStyle == MouseControlStyle.Classic
+					// Classic + RustedWarfare: left; Modern / OtherRTS: right
+					return MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.RustedWarfare
 						? MouseButton.Left : MouseButton.Right;
 				default: return MouseButton.Left;
 			}
