@@ -314,7 +314,7 @@ Background@MAINMENU_INTRODUCTION_PROMPT:
 						Container@MOUSE_CONTROL_DESC_TOUCH:
 							X: PARENT_WIDTH / 2 + 10
 							Width: PARENT_WIDTH / 2 - 20
-																					Children:
+							Children:
 								LabelWithHighlight@DESC_SELECTION:
 									Width: PARENT_WIDTH
 									Height: 17

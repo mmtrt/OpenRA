@@ -254,7 +254,7 @@ Container@INPUT_PANEL:
 							X: 10
 							Y: 55
 							Width: PARENT_WIDTH / 2 - 20
-																					Children:
+							Children:
 								LabelWithHighlight@DESC_SELECTION:
 									Width: PARENT_WIDTH
 									Height: 17
