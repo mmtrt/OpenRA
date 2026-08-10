@@ -21,7 +21,8 @@ namespace OpenRA.Android
 		ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden,
 		ScreenOrientation = ScreenOrientation.SensorLandscape,
 		Theme = "@android:style/Theme.NoTitleBar.Fullscreen",
-		LaunchMode = LaunchMode.SingleInstance)]
+		LaunchMode = LaunchMode.SingleInstance,
+		WindowSoftInputMode = SoftInput.AdjustNothing | SoftInput.StateAlwaysHidden)]
 	public class MainActivity : Activity, View.IOnTouchListener
 	{
 		public static OpenRA.Platforms.Android.AndroidPlatformWindow PlatformWindow;
@@ -72,7 +73,7 @@ namespace OpenRA.Android
 					if ((int)Build.VERSION.SdkInt >= 28 && Window.Attributes != null)
 					{
 						var lp = Window.Attributes;
-						lp.LayoutInDisplayCutoutMode = global::Android.Views.LayoutInDisplayCutoutMode.ShortEdges;
+						lp.LayoutInDisplayCutoutMode = global::Android.Views.LayoutInDisplayCutoutMode.Default;
 						Window.Attributes = lp;
 					}
 				}
@@ -103,7 +104,7 @@ namespace OpenRA.Android
 
 				try
 				{
-					AndroidSoftKeyboard.Attach(this, root);
+					AndroidSoftKeyboard.Attach(this, root, surfaceView);
 					OpenRA.Platforms.Android.AndroidKeyboardBridge.SetWanted = AndroidSoftKeyboard.SetWanted;
 				}
 				catch (Exception e) { AndroidFileLog.Warn("OpenRA.Main", "SoftKeyboard: " + e.Message); }
@@ -325,6 +326,8 @@ namespace OpenRA.Android
 
 		public bool OnTouch(View v, MotionEvent e)
 		{
+			try { AndroidSoftKeyboard.NotifyUserTouch(); } catch { /* ignore */ }
+
 			try
 			{
 				if (v != null)
@@ -443,6 +446,7 @@ namespace OpenRA.Android
 			try { PlatformWindow?.SetSuspended(true); } catch { /* ignore */ }
 			// Pause OpenAL + detach context so we do not burn CPU/battery in background
 			try { OpenRA.Platforms.Android.AndroidAudioBridge.SetSuspended?.Invoke(true); } catch { /* ignore */ }
+			try { AndroidSoftKeyboard.ForceHide(); } catch { /* ignore */ }
 			AndroidFileLog.Info("OpenRA.Main", "OnPause");
 		}
 

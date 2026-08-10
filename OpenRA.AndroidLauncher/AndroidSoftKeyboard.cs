@@ -1,40 +1,53 @@
-// Soft keyboard for OpenRA TextFieldWidget focus on Android.
-// NOTE: This file lives in namespace OpenRA.Android — never write "Android.Widget"
-// or "Android.Text" unqualified; the compiler resolves them as OpenRA.Android.*.
-// Always use global::Android.* or the aliases below.
+// Soft keyboard for OpenRA TextFieldWidget — uses the system IME (Gboard, etc.).
+// Floating mode cannot be forced by apps; users enable it in Gboard (toolbar → Floating).
+// Inside namespace OpenRA.Android always use global::Android.* for Widget/Text types.
 
 using System;
 using Android.App;
 using Android.Content;
-using Android.OS;
 using Android.Views;
 using Android.Views.InputMethods;
 using OpenRA.Platforms.Android;
 using AKeycode = global::Android.Views.Keycode;
+using AView = global::Android.Views.View;
 using AViewStates = global::Android.Views.ViewStates;
 using AEditText = global::Android.Widget.EditText;
 using AFrameLayout = global::Android.Widget.FrameLayout;
 using AInputTypes = global::Android.Text.InputTypes;
 using ATextChangedEventArgs = global::Android.Text.TextChangedEventArgs;
+using AImeAction = global::Android.Views.InputMethods.ImeAction;
+using AImeFlags = global::Android.Views.InputMethods.ImeFlags;
 
 namespace OpenRA.Android
 {
 	/// <summary>
-	/// Shows the system IME when a text field has keyboard focus.
-	/// Characters are forwarded into <see cref="AndroidInput"/> key queue.
+	/// Shows the system IME only while a text field has keyboard focus and the user
+	/// recently tapped. Characters are forwarded into <see cref="AndroidInput"/>.
 	/// </summary>
 	public static class AndroidSoftKeyboard
 	{
 		static Activity activity;
+		static AView gameSurface;
 		static AEditText hiddenInput;
 		static bool wanted;
 		static bool visible;
 		static string lastText = "";
 		static bool suppressChange;
+		static long lastUserTouchMs;
+		const int UserTouchGraceMs = 800;
 
-		public static void Attach(Activity act, AFrameLayout root)
+		public static void Attach(Activity act, AFrameLayout root, AView surface = null)
 		{
 			activity = act;
+			if (surface != null)
+				gameSurface = surface;
+
+			try
+			{
+				act.Window?.SetSoftInputMode(SoftInput.AdjustNothing | SoftInput.StateAlwaysHidden);
+			}
+			catch { /* ignore */ }
+
 			if (hiddenInput != null)
 				return;
 
@@ -43,28 +56,28 @@ namespace OpenRA.Android
 				Focusable = true,
 				FocusableInTouchMode = true,
 				Visibility = AViewStates.Invisible,
-				ImeOptions = ImeAction.Done,
+				// Reduce landscape fullscreen extract UI when the system IME appears
+				ImeOptions = AImeAction.Done | AImeFlags.NoExtractUi | AImeFlags.NoFullscreen,
 				InputType = AInputTypes.ClassText | AInputTypes.TextFlagNoSuggestions
 			};
-			// Keep off-screen / zero size so it never covers GL
 			var lp = new AFrameLayout.LayoutParams(1, 1)
 			{
-				LeftMargin = -1000,
-				TopMargin = -1000
+				LeftMargin = -2000,
+				TopMargin = -2000
 			};
 			root.AddView(hiddenInput, lp);
 
 			hiddenInput.TextChanged += OnTextChanged;
 			hiddenInput.EditorAction += (s, e) =>
 			{
-				if (e.ActionId == ImeAction.Done || e.ActionId == ImeAction.Go || e.ActionId == ImeAction.Send)
+				if (e.ActionId == AImeAction.Done || e.ActionId == AImeAction.Go
+				    || e.ActionId == AImeAction.Send || e.ActionId == AImeAction.Next)
 				{
 					EnqueueSpecial(AKeycode.Enter);
-					Hide();
+					ForceHide();
 					e.Handled = true;
 				}
 			};
-
 			hiddenInput.KeyPress += (s, e) =>
 			{
 				if (e.Event == null)
@@ -78,6 +91,7 @@ namespace OpenRA.Android
 				         && e.Event.Action == KeyEventActions.Down)
 				{
 					EnqueueSpecial(AKeycode.Enter);
+					ForceHide();
 					e.Handled = true;
 				}
 			};
@@ -91,14 +105,10 @@ namespace OpenRA.Android
 			{
 				var text = hiddenInput.Text ?? "";
 				if (text.Length > lastText.Length)
-				{
-					var added = text.Substring(lastText.Length);
-					EnqueueChars(added);
-				}
+					EnqueueChars(text.Substring(lastText.Length));
 				else if (text.Length < lastText.Length)
 				{
-					var removed = lastText.Length - text.Length;
-					for (var i = 0; i < removed; i++)
+					for (var i = 0; i < lastText.Length - text.Length; i++)
 						EnqueueBackspace();
 				}
 				lastText = text;
@@ -144,9 +154,20 @@ namespace OpenRA.Android
 			input.EnqueueSpecialKey(key, OpenRA.KeyInputEvent.Up);
 		}
 
-		/// <summary>Called from game thread / PumpInput when focus changes.</summary>
+		public static void NotifyUserTouch()
+		{
+			lastUserTouchMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		}
+
 		public static void SetWanted(bool want)
 		{
+			if (want)
+			{
+				var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+				if (now - lastUserTouchMs > UserTouchGraceMs)
+					want = false;
+			}
+
 			if (wanted == want)
 				return;
 			wanted = want;
@@ -162,9 +183,21 @@ namespace OpenRA.Android
 			});
 		}
 
+		public static void ForceHide()
+		{
+			wanted = false;
+			var act = activity ?? MainActivity.Current;
+			if (act == null)
+			{
+				Hide();
+				return;
+			}
+			act.RunOnUiThread(Hide);
+		}
+
 		static void Show()
 		{
-			if (activity == null || hiddenInput == null)
+			if (activity == null || hiddenInput == null || !wanted)
 				return;
 			try
 			{
@@ -175,8 +208,9 @@ namespace OpenRA.Android
 				hiddenInput.Visibility = AViewStates.Visible;
 				hiddenInput.RequestFocus();
 				var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
-				imm?.ShowSoftInput(hiddenInput, ShowFlags.Forced);
+				imm?.ShowSoftInput(hiddenInput, ShowFlags.Implicit);
 				visible = true;
+				AndroidFileLog.Info("OpenRA.Keyboard", "IME show");
 			}
 			catch (Exception e)
 			{
@@ -192,9 +226,20 @@ namespace OpenRA.Android
 			{
 				var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
 				imm?.HideSoftInputFromWindow(hiddenInput.WindowToken, HideSoftInputFlags.None);
+				try
+				{
+					var decor = activity.Window?.DecorView;
+					if (decor != null)
+						imm?.HideSoftInputFromWindow(decor.WindowToken, HideSoftInputFlags.None);
+				}
+				catch { /* ignore */ }
+
 				hiddenInput.ClearFocus();
 				hiddenInput.Visibility = AViewStates.Invisible;
 				visible = false;
+				try { gameSurface?.RequestFocus(); }
+				catch { /* ignore */ }
+				AndroidFileLog.Info("OpenRA.Keyboard", "IME hide");
 			}
 			catch (Exception e)
 			{
@@ -202,15 +247,16 @@ namespace OpenRA.Android
 			}
 		}
 
-		/// <summary>True if OpenRA widget is a text entry field.</summary>
 		public static bool IsTextEntryWidget(object widget)
 		{
 			if (widget == null)
 				return false;
 			var name = widget.GetType().Name;
-			return name.Contains("TextField", StringComparison.Ordinal)
-			       || name.Contains("TextInput", StringComparison.Ordinal)
-			       || name.Contains("PasswordField", StringComparison.Ordinal);
+			return name == "TextFieldWidget"
+			       || name == "PasswordFieldWidget"
+			       || name == "TextInputWidget"
+			       || name.EndsWith("TextFieldWidget", StringComparison.Ordinal)
+			       || name.EndsWith("PasswordFieldWidget", StringComparison.Ordinal);
 		}
 	}
 }

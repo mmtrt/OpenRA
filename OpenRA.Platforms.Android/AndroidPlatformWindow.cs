@@ -160,10 +160,14 @@ namespace OpenRA.Platforms.Android
 
 		static bool IsTextEntryName(string typeName)
 		{
-			return typeName != null && (
-				typeName.Contains("TextField", System.StringComparison.Ordinal)
-				|| typeName.Contains("TextInput", System.StringComparison.Ordinal)
-				|| typeName.Contains("PasswordField", System.StringComparison.Ordinal));
+			if (string.IsNullOrEmpty(typeName))
+				return false;
+			// Strict match — do not open IME for ViewportController / random widgets
+			return typeName == "TextFieldWidget"
+				|| typeName == "PasswordFieldWidget"
+				|| typeName == "TextInputWidget"
+				|| typeName.EndsWith("TextFieldWidget", System.StringComparison.Ordinal)
+				|| typeName.EndsWith("PasswordFieldWidget", System.StringComparison.Ordinal);
 		}
 
 		public string GetClipboardText() => string.Empty;
