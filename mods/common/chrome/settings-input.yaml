@@ -315,6 +315,18 @@ Container@INPUT_PANEL:
 									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-rustedwarfare-edgescroll
+								LabelWithHighlight@DESC_BOX:
+									Y: 134
+									Width: PARENT_WIDTH
+									Height: 16
+									Font: Small
+									Text: label-mouse-control-desc-rustedwarfare-box
+								LabelWithHighlight@DESC_DOUBLE:
+									Y: 150
+									Width: PARENT_WIDTH
+									Height: 16
+									Font: Small
+									Text: label-mouse-control-desc-rustedwarfare-double
 				Container@ROW:
 					Width: PARENT_WIDTH - 24
 					Height: 20

@@ -464,7 +464,7 @@ label-mouse-control-desc-rustedwarfare-zoom-modifier = - Zoom the battlefield us
 label-mouse-control-desc-rustedwarfare-scroll-right = - Pan using <two-finger drag> or the screen edge
 label-mouse-control-desc-rustedwarfare-scroll-middle = - Pan using <two-finger drag> or the screen edge
 label-mouse-control-desc-rustedwarfare-edgescroll = or by moving to the edge of the screen
-label-mouse-control-desc-rustedwarfare-box = - Box-select using a <two-finger drag>
+label-mouse-control-desc-rustedwarfare-box = - Box-select units using a <one-finger drag>
 label-mouse-control-desc-rustedwarfare-double = - Select all of a type using a <double tap>
 checkbox-edgescroll-container = Screen Edge Panning
 
