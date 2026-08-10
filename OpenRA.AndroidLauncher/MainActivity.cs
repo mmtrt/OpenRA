@@ -341,7 +341,7 @@ namespace OpenRA.Android
 					break;
 				case MotionEventActions.Move:
 					for (var i = 0; i < e.PointerCount; i++)
-						input.OnTouchMove(e.GetPointerId(i), (int)e.GetX(i), (int)e.GetY(i));
+						input.OnTouchMove(e.GetPointerId(i), (int)e.GetX(i), (int)e.GetY(i), time);
 					break;
 				case MotionEventActions.Up:
 				case MotionEventActions.PointerUp:
