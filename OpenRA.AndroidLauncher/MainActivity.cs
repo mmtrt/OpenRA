@@ -64,7 +64,7 @@ namespace OpenRA.Android
 				AndroidFileLog.Info("OpenRA.Main", "Building UI");
 
 				ApplyImmersiveMode();
-				try { VolumeControlStream = Android.Media.Stream.Music; } catch { /* ignore */ }
+				try { VolumeControlStream = global::Android.Media.Stream.Music; } catch { /* ignore */ }
 				try
 				{
 					// Keep screen on during play; avoid thermal throttling surprises mid-match
@@ -72,7 +72,7 @@ namespace OpenRA.Android
 					if ((int)Build.VERSION.SdkInt >= 28 && Window.Attributes != null)
 					{
 						var lp = Window.Attributes;
-						lp.LayoutInDisplayCutoutMode = Android.Views.LayoutInDisplayCutoutMode.ShortEdges;
+						lp.LayoutInDisplayCutoutMode = global::Android.Views.LayoutInDisplayCutoutMode.ShortEdges;
 						Window.Attributes = lp;
 					}
 				}

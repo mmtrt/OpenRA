@@ -1,15 +1,21 @@
 // Soft keyboard for OpenRA TextFieldWidget focus on Android.
+// NOTE: This file lives in namespace OpenRA.Android — never write "Android.Widget"
+// or "Android.Text" unqualified; the compiler resolves them as OpenRA.Android.*.
+// Always use global::Android.* or the aliases below.
 
 using System;
 using Android.App;
 using Android.Content;
-using Android.Text;
+using Android.OS;
 using Android.Views;
 using Android.Views.InputMethods;
-using Android.Widget;
 using OpenRA.Platforms.Android;
-using AKeycode = Android.Views.Keycode;
-using AView = Android.Views.View;
+using AKeycode = global::Android.Views.Keycode;
+using AViewStates = global::Android.Views.ViewStates;
+using AEditText = global::Android.Widget.EditText;
+using AFrameLayout = global::Android.Widget.FrameLayout;
+using AInputTypes = global::Android.Text.InputTypes;
+using ATextChangedEventArgs = global::Android.Text.TextChangedEventArgs;
 
 namespace OpenRA.Android
 {
@@ -20,30 +26,32 @@ namespace OpenRA.Android
 	public static class AndroidSoftKeyboard
 	{
 		static Activity activity;
-		static EditText hiddenInput;
+		static AEditText hiddenInput;
 		static bool wanted;
 		static bool visible;
 		static string lastText = "";
 		static bool suppressChange;
 
-		public static void Attach(Activity act, Android.Widget.FrameLayout root)
+		public static void Attach(Activity act, AFrameLayout root)
 		{
 			activity = act;
 			if (hiddenInput != null)
 				return;
 
-			hiddenInput = new EditText(act)
+			hiddenInput = new AEditText(act)
 			{
 				Focusable = true,
 				FocusableInTouchMode = true,
-				Visibility = ViewStates.Invisible,
+				Visibility = AViewStates.Invisible,
 				ImeOptions = ImeAction.Done,
-				InputType = InputTypes.ClassText | InputTypes.TextFlagNoSuggestions
+				InputType = AInputTypes.ClassText | AInputTypes.TextFlagNoSuggestions
 			};
 			// Keep off-screen / zero size so it never covers GL
-			var lp = new FrameLayout.LayoutParams(1, 1);
-			lp.LeftMargin = -1000;
-			lp.TopMargin = -1000;
+			var lp = new AFrameLayout.LayoutParams(1, 1)
+			{
+				LeftMargin = -1000,
+				TopMargin = -1000
+			};
 			root.AddView(hiddenInput, lp);
 
 			hiddenInput.TextChanged += OnTextChanged;
@@ -51,7 +59,7 @@ namespace OpenRA.Android
 			{
 				if (e.ActionId == ImeAction.Done || e.ActionId == ImeAction.Go || e.ActionId == ImeAction.Send)
 				{
-					EnqueueSpecial(Keycode.Return);
+					EnqueueSpecial(AKeycode.Enter);
 					Hide();
 					e.Handled = true;
 				}
@@ -75,7 +83,7 @@ namespace OpenRA.Android
 			};
 		}
 
-		static void OnTextChanged(object sender, Android.Text.TextChangedEventArgs e)
+		static void OnTextChanged(object sender, ATextChangedEventArgs e)
 		{
 			if (suppressChange || hiddenInput == null)
 				return;
@@ -114,7 +122,6 @@ namespace OpenRA.Android
 			var input = AndroidPlatformWindow.Current?.Input;
 			if (input == null)
 				return;
-			// OpenRA Keycode.BACKSPACE
 			input.EnqueueSpecialKey(OpenRA.Keycode.BACKSPACE, OpenRA.KeyInputEvent.Down);
 			input.EnqueueSpecialKey(OpenRA.Keycode.BACKSPACE, OpenRA.KeyInputEvent.Up);
 		}
@@ -165,9 +172,9 @@ namespace OpenRA.Android
 				hiddenInput.Text = "";
 				lastText = "";
 				suppressChange = false;
-				hiddenInput.Visibility = ViewStates.Visible;
+				hiddenInput.Visibility = AViewStates.Visible;
 				hiddenInput.RequestFocus();
-				var imm = InputMethodManager.FromContext(activity);
+				var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
 				imm?.ShowSoftInput(hiddenInput, ShowFlags.Forced);
 				visible = true;
 			}
@@ -183,10 +190,10 @@ namespace OpenRA.Android
 				return;
 			try
 			{
-				var imm = InputMethodManager.FromContext(activity);
+				var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
 				imm?.HideSoftInputFromWindow(hiddenInput.WindowToken, HideSoftInputFlags.None);
 				hiddenInput.ClearFocus();
-				hiddenInput.Visibility = ViewStates.Invisible;
+				hiddenInput.Visibility = AViewStates.Invisible;
 				visible = false;
 			}
 			catch (Exception e)
