@@ -90,6 +90,13 @@ namespace OpenRA.Android
 				root.AddView(surfaceView, new FrameLayout.LayoutParams(
 					ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
+				try
+				{
+					AndroidSoftKeyboard.Attach(this, root);
+					OpenRA.Platforms.Android.AndroidKeyboardBridge.SetWanted = AndroidSoftKeyboard.SetWanted;
+				}
+				catch (Exception e) { AndroidFileLog.Warn("OpenRA.Main", "SoftKeyboard: " + e.Message); }
+
 				statusOverlay = new TextView(this)
 				{
 					Text = "OpenRA Android",

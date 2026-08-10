@@ -444,10 +444,17 @@ namespace OpenRA.Android
 					tab + "UIScale: 1.75" + nl +
 					tab + "VSync: true" + nl +
 					"Sound:" + nl +
-					tab + "Device: " + nl;  // empty = default OpenAL device
+					tab + "Device: " + nl +  // empty = default OpenAL device
+					"Game:" + nl +
+					tab + "MouseControlStyle: Touch" + nl;  // Android-only default control scheme
+				// Battlefield camera Close is Graphics.ViewportDistance (OpenRA enum WorldViewport)
+				yaml = yaml.Replace(
+					tab + "UIScale: 1.75" + nl,
+					tab + "UIScale: 1.75" + nl +
+					tab + "ViewportDistance: Close" + nl);
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
-					"Seeded settings.yaml " + w + "x" + h + " path=" + path);
+					"Seeded settings.yaml Touch + UIScale 1.75 + ViewportDistance Close " + w + "x" + h);
 				WritePinnedUIScale(supportDir, 1.75f);
 			}
 			catch (Exception e)
@@ -488,6 +495,32 @@ namespace OpenRA.Android
 					text = text.Replace("Device: Null", "Device:");
 					changed = true;
 					AndroidFileLog.Info("OpenRA.Bootstrap", "Migrated Sound.Device Null → default (OpenAL)");
+				}
+				// Scheme rename: RustedWarfare → Touch (Classic-based mobile gestures)
+				if (text.IndexOf("MouseControlStyle: RustedWarfare", StringComparison.Ordinal) >= 0)
+				{
+					text = text.Replace("MouseControlStyle: RustedWarfare", "MouseControlStyle: Touch");
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Migrated MouseControlStyle RustedWarfare → Touch");
+				}
+				// Android defaults when keys never set (do not override user choices)
+				if (text.IndexOf("MouseControlStyle", StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					if (text.Contains("Game:"))
+						text = text.Replace("Game:", "Game:" + Environment.NewLine + "	MouseControlStyle: Touch");
+					else
+						text += Environment.NewLine + "Game:" + Environment.NewLine + "	MouseControlStyle: Touch" + Environment.NewLine;
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted MouseControlStyle → Touch");
+				}
+				if (text.IndexOf("ViewportDistance", StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					if (text.Contains("Graphics:"))
+						text = text.Replace("Graphics:", "Graphics:" + Environment.NewLine + "	ViewportDistance: Close");
+					else
+						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	ViewportDistance: Close" + Environment.NewLine;
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted ViewportDistance → Close");
 				}
 
 				if (changed)

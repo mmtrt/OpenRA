@@ -23,7 +23,7 @@ namespace OpenRA.Mods.Common.Orders
 		protected OrderGenerator(World world)
 		{
 			gameSettings = Game.Settings.Game;
-			if (gameSettings.MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.RustedWarfare)
+			if (gameSettings.MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.Touch)
 				world.Selection.Clear();
 		}
 

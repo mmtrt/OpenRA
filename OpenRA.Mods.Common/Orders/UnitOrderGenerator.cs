@@ -92,7 +92,7 @@ namespace OpenRA.Mods.Common.Orders
 			var target = TargetForInput(world, cell, worldPixel, mi);
 
 			bool useSelect;
-			if (gameSettings.MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.RustedWarfare && !InputOverridesSelection(world, worldPixel, mi))
+			if (gameSettings.MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.Touch && !InputOverridesSelection(world, worldPixel, mi))
 				useSelect = target.Type == TargetType.Actor && target.Actor.Info.HasTraitInfo<ISelectableInfo>();
 			else
 			{

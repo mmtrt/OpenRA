@@ -34,7 +34,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		const string OtherRTS = "options-control-scheme.otherrts";
 
 		[FluentReference]
-		const string RustedWarfare = "options-control-scheme.rustedwarfare";
+		const string Touch = "options-control-scheme.touch";
 
 		public static bool ShouldShowPrompt()
 		{
@@ -53,7 +53,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				{ MouseControlStyle.Classic, FluentProvider.GetMessage(Classic) },
 				{ MouseControlStyle.Modern, FluentProvider.GetMessage(Modern) },
 				{ MouseControlStyle.OtherRTS, FluentProvider.GetMessage(OtherRTS) },
-				{ MouseControlStyle.RustedWarfare, FluentProvider.GetMessage(RustedWarfare) },
+				{ MouseControlStyle.Touch, FluentProvider.GetMessage(Touch) },
 			};
 
 			if (gameSettings.IntroductionPromptVersion < 2)
@@ -111,9 +111,9 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var mouseControlDescOtherRTS = widget.Get("MOUSE_CONTROL_DESC_OTHERRTS");
 			mouseControlDescOtherRTS.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.OtherRTS;
 
-			var mouseControlDescRustedWarfare = widget.GetOrNull("MOUSE_CONTROL_DESC_RUSTEDWARFARE");
-			if (mouseControlDescRustedWarfare != null)
-				mouseControlDescRustedWarfare.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.RustedWarfare;
+			var mouseControlDescTouch = widget.GetOrNull("MOUSE_CONTROL_DESC_TOUCH");
+			if (mouseControlDescTouch != null)
+				mouseControlDescTouch.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.Touch;
 
 			var mouseControlDropdown = widget.Get<DropDownButtonWidget>("MOUSE_CONTROL_DROPDOWN");
 			mouseControlDropdown.OnMouseDown = _ => InputSettingsLogic.ShowMouseControlDropdown(mouseControlDropdown, controlTypes, gameSettings);
@@ -125,8 +125,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				mouseControlDescModern,
 				mouseControlDescOtherRTS
 			};
-			if (mouseControlDescRustedWarfare != null)
-				mouseControlDescContainers.Add(mouseControlDescRustedWarfare);
+			if (mouseControlDescTouch != null)
+				mouseControlDescContainers.Add(mouseControlDescTouch);
 
 			foreach (var container in mouseControlDescContainers)
 			{

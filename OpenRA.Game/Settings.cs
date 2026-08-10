@@ -20,7 +20,7 @@ using OpenRA.Primitives;
 
 namespace OpenRA
 {
-	public enum MouseControlStyle { Classic, Modern, OtherRTS, RustedWarfare }
+	public enum MouseControlStyle { Classic, Modern, OtherRTS, Touch }
 	public enum MouseScrollType { Disabled, Standard, Inverted, Joystick }
 	public enum StatusBarsType { Standard, DamageShow, AlwaysShow }
 	public enum TargetLinesType { Disabled, Manual, Automatic }
@@ -365,12 +365,12 @@ namespace OpenRA
 			switch (actionType)
 			{
 				case MouseActionType.ConfirmOrder:
-					// Modern: right-click confirm; Classic + OtherRTS + RustedWarfare: left
+					// Modern: right-click confirm; Classic + OtherRTS + Touch: left
 					return MouseControlStyle == MouseControlStyle.Modern
 						? MouseButton.Right : MouseButton.Left;
 				case MouseActionType.Contextual:
-					// Classic + RustedWarfare: left; Modern / OtherRTS: right
-					return MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.RustedWarfare
+					// Classic + Touch: left; Modern / OtherRTS: right
+					return MouseControlStyle is MouseControlStyle.Classic or MouseControlStyle.Touch
 						? MouseButton.Left : MouseButton.Right;
 				default: return MouseButton.Left;
 			}

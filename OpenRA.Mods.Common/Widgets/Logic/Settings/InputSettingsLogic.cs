@@ -28,7 +28,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		const string OtherRTS = "options-control-scheme.otherrts";
 
 		[FluentReference]
-		const string RustedWarfare = "options-control-scheme.rustedwarfare";
+		const string Touch = "options-control-scheme.touch";
 
 		[FluentReference]
 		const string Disabled = "options-mouse-scroll-type.disabled";
@@ -54,7 +54,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				{ MouseControlStyle.Classic, FluentProvider.GetMessage(Classic) },
 				{ MouseControlStyle.Modern, FluentProvider.GetMessage(Modern) },
 				{ MouseControlStyle.OtherRTS, FluentProvider.GetMessage(OtherRTS) },
-				{ MouseControlStyle.RustedWarfare, FluentProvider.GetMessage(RustedWarfare) },
+				{ MouseControlStyle.Touch, FluentProvider.GetMessage(Touch) },
 			};
 			gameSettings = modData.GetSettings<GameSettings>();
 
@@ -93,10 +93,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var mouseControlDescOtherRTS = panel.Get("MOUSE_CONTROL_DESC_OTHERRTS");
 			mouseControlDescOtherRTS.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.OtherRTS;
 
-			var mouseControlDescRustedWarfare = panel.Get("MOUSE_CONTROL_DESC_RUSTEDWARFARE");
-			mouseControlDescRustedWarfare.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.RustedWarfare;
+			var mouseControlDescTouch = panel.Get("MOUSE_CONTROL_DESC_TOUCH");
+			mouseControlDescTouch.IsVisible = () => gameSettings.MouseControlStyle == MouseControlStyle.Touch;
 
-			foreach (var container in new[] { mouseControlDescClassic, mouseControlDescModern, mouseControlDescOtherRTS, mouseControlDescRustedWarfare })
+			foreach (var container in new[] { mouseControlDescClassic, mouseControlDescModern, mouseControlDescOtherRTS, mouseControlDescTouch })
 			{
 				var classicScrollRight = container.Get("DESC_SCROLL_RIGHT");
 				classicScrollRight.IsVisible = () => (gameSettings.MouseControlStyle == MouseControlStyle.Classic) ^ gameSettings.UseAlternateScrollButton;

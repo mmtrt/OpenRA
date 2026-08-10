@@ -1,4 +1,4 @@
-// Desktop unit-test style harness for AndroidInput (Rusted Warfare gestures).
+// Desktop unit-test style harness for AndroidInput (Touch gestures).
 // Can be compiled and run with plain `dotnet run` once a tiny test project is added,
 // or copied into an xUnit / NUnit project that references OpenRA.Platforms.Android.
 //

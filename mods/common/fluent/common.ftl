@@ -401,7 +401,7 @@ options-control-scheme =
     .classic = Classic
     .modern = Modern
     .otherrts = Other RTS
-    .rustedwarfare = Rusted Warfare
+    .touch = Touch
 
 ## SettingsLogic
 dialog-settings-save =

@@ -136,11 +136,34 @@ namespace OpenRA.Platforms.Android
 						MouseInputEvent.Move, MouseButton.None,
 						pan, int2.Zero, Modifiers.None, 0));
 				}
+
+				foreach (var ki in input.DrainKey())
+				{
+					try { inputHandler.OnKeyInput(ki); }
+					catch { /* ignore */ }
+				}
+
+				// Soft keyboard for TextFieldWidget — launcher registers the callback.
+				try
+				{
+					var focus = OpenRA.Widgets.Ui.KeyboardFocusWidget;
+					var needKb = focus != null && IsTextEntryName(focus.GetType().Name);
+					AndroidKeyboardBridge.SetWanted?.Invoke(needKb);
+				}
+				catch { /* Ui / keyboard optional during bootstrap */ }
 			}
 			else
 			{
 				input.ClearFrame();
 			}
+		}
+
+		static bool IsTextEntryName(string typeName)
+		{
+			return typeName != null && (
+				typeName.Contains("TextField", System.StringComparison.Ordinal)
+				|| typeName.Contains("TextInput", System.StringComparison.Ordinal)
+				|| typeName.Contains("PasswordField", System.StringComparison.Ordinal));
 		}
 
 		public string GetClipboardText() => string.Empty;

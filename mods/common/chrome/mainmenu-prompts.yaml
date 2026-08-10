@@ -311,7 +311,7 @@ Background@MAINMENU_INTRODUCTION_PROMPT:
 									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-modern-edgescroll
-						Container@MOUSE_CONTROL_DESC_RUSTEDWARFARE:
+						Container@MOUSE_CONTROL_DESC_TOUCH:
 							X: PARENT_WIDTH / 2 + 10
 							Width: PARENT_WIDTH / 2 - 20
 							Children:
@@ -319,74 +319,74 @@ Background@MAINMENU_INTRODUCTION_PROMPT:
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-selection
+									Text: label-mouse-control-desc-touch-selection
 								LabelWithHighlight@DESC_COMMANDS:
 									Y: 17
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-commands
+									Text: label-mouse-control-desc-touch-commands
 								LabelWithHighlight@DESC_ORDERS:
 									Y: 34
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-orders
+									Text: label-mouse-control-desc-touch-orders
 								LabelWithHighlight@DESC_BUILDINGS:
 									Y: 51
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-buildings
+									Text: label-mouse-control-desc-touch-buildings
 								LabelWithHighlight@DESC_SUPPORT:
 									Y: 68
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-support
+									Text: label-mouse-control-desc-touch-support
 								LabelWithHighlight@DESC_ZOOM:
 									Y: 85
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-zoom
+									Text: label-mouse-control-desc-touch-zoom
 								LabelWithHighlight@DESC_ZOOM_MODIFIER:
 									Y: 85
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-zoom-modifier
+									Text: label-mouse-control-desc-touch-zoom-modifier
 								LabelWithHighlight@DESC_SCROLL_RIGHT:
 									Y: 102
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-scroll-right
+									Text: label-mouse-control-desc-touch-scroll-right
 								LabelWithHighlight@DESC_SCROLL_MIDDLE:
 									Y: 102
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-scroll-middle
+									Text: label-mouse-control-desc-touch-scroll-middle
 								Label@DESC_EDGESCROLL:
 									X: 9
 									Y: 118
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-edgescroll
+									Text: label-mouse-control-desc-touch-edgescroll
 								LabelWithHighlight@DESC_BOX:
 									Y: 134
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-box
+									Text: label-mouse-control-desc-touch-box
 								LabelWithHighlight@DESC_DOUBLE:
 									Y: 150
 									Width: PARENT_WIDTH
 									Height: 16
 									Font: Small
-									Text: label-mouse-control-desc-rustedwarfare-double
+									Text: label-mouse-control-desc-touch-double
 				Container@ROW:
 					Width: PARENT_WIDTH
 					Height: 20
