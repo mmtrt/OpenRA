@@ -147,7 +147,7 @@ namespace OpenRA.Platforms.Android
 				try
 				{
 					var focus = OpenRA.Widgets.Ui.KeyboardFocusWidget;
-					var needKb = focus != null && IsTextEntryName(focus.GetType().Name);
+					var needKb = focus != null && IsEditableTextEntry(focus);
 					AndroidKeyboardBridge.SetWanted?.Invoke(needKb);
 				}
 				catch { /* Ui / keyboard optional during bootstrap */ }
@@ -158,16 +158,36 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
-		static bool IsTextEntryName(string typeName)
+		static bool IsEditableTextEntry(object widget)
 		{
-			if (string.IsNullOrEmpty(typeName))
+			if (widget == null)
 				return false;
-			// Strict match — do not open IME for ViewportController / random widgets
-			return typeName == "TextFieldWidget"
+			var typeName = widget.GetType().Name;
+			if (!(typeName == "TextFieldWidget"
 				|| typeName == "PasswordFieldWidget"
 				|| typeName == "TextInputWidget"
 				|| typeName.EndsWith("TextFieldWidget", System.StringComparison.Ordinal)
-				|| typeName.EndsWith("PasswordFieldWidget", System.StringComparison.Ordinal);
+				|| typeName.EndsWith("PasswordFieldWidget", System.StringComparison.Ordinal)))
+				return false;
+
+			// Skip disabled / non-interactive fields (labels styled as fields, locked options)
+			try
+			{
+				var mi = widget.GetType().GetMethod("IsDisabled", System.Type.EmptyTypes);
+				if (mi != null && mi.ReturnType == typeof(bool) && (bool)mi.Invoke(widget, null))
+					return false;
+			}
+			catch { /* ignore */ }
+
+			try
+			{
+				var prop = widget.GetType().GetProperty("IsVisible");
+				if (prop != null && prop.PropertyType == typeof(bool) && !(bool)prop.GetValue(widget))
+					return false;
+			}
+			catch { /* ignore */ }
+
+			return true;
 		}
 
 		public string GetClipboardText() => string.Empty;

@@ -161,11 +161,13 @@ namespace OpenRA.Android
 
 		public static void SetWanted(bool want)
 		{
-			if (want)
+			// Grace only when *opening* — once visible, stay until focus leaves the field.
+			// (Old logic re-checked every frame and hid the keyboard ~800ms after the tap.)
+			if (want && !wanted)
 			{
 				var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 				if (now - lastUserTouchMs > UserTouchGraceMs)
-					want = false;
+					return;
 			}
 
 			if (wanted == want)

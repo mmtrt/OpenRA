@@ -72,9 +72,9 @@ namespace OpenRA.Platforms.Android
 		const int TwoFingerTapSlop = 36;
 		const int TwoFingerTapMaxMs = 400;
 		/// <summary>Vertical travel (px) of 3-finger centroid per zoom step.</summary>
-		const int ThreeFingerZoomStep = 40;
-		const float ThreeFingerZoomRatioIn = 1.12f;
-		const float ThreeFingerZoomRatioOut = 1f / 1.12f;
+		const int ThreeFingerZoomStep = 28;
+		const float ThreeFingerZoomRatioIn = 1.15f;
+		const float ThreeFingerZoomRatioOut = 1f / 1.15f;
 
 		readonly object queueLock = new();
 		readonly Queue<MouseInput> mouseQueue = new();
@@ -422,15 +422,9 @@ namespace OpenRA.Platforms.Android
 
 				if (twoFingerPanActive && step >= PanSlop)
 				{
+					// Pan only — do NOT emit Scroll here (OpenRA treats vertical scroll as zoom).
 					EnqueuePanMove(scheme, mid, mdx, mdy);
 					twoFingerMid = mid;
-
-					if (Math.Abs(mdy) >= PanSlop)
-					{
-						var scrollDy = Math.Clamp(mdy, -48, 48);
-						lock (queueLock)
-							scrollQueue.Enqueue((mid, new int2(0, scrollDy)));
-					}
 				}
 			}
 			else if (active.Count >= 3 && threeFingerZoomActive)
