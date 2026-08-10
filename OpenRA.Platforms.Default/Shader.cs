@@ -24,7 +24,7 @@ namespace OpenRA.Platforms.Default
 		readonly Dictionary<int, ITexture> textures = [];
 		readonly Queue<int> unbindTextures = [];
 		readonly IShaderBindings bindings;
-		readonly uint program;
+		uint program;
 
 		static uint CompileShaderObject(int type, string code, string name)
 		{
@@ -256,6 +256,18 @@ namespace OpenRA.Platforms.Default
 			}
 
 			OpenGL.CheckGLError();
+		}
+
+		public void Dispose()
+		{
+			// See AndroidShader.Dispose for context: IShader previously had no Dispose at
+			// all, leaking one compiled GL program per world-level post-process effect
+			// trait on every world reload.
+			if (program != 0)
+			{
+				OpenGL.glDeleteProgram(program);
+				program = 0;
+			}
 		}
 	}
 }
