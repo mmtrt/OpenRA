@@ -82,6 +82,7 @@ namespace OpenRA.Platforms.Android
 		readonly Queue<int2> panQueue = new();
 		readonly Queue<(int2 loc, int2 delta)> scrollQueue = new();
 		readonly Queue<KeyInput> keyQueue = new();
+		readonly Queue<string> textQueue = new();
 		int2 lastPointerLogical;
 		public int2 LastPointerLogical => lastPointerLogical;
 
@@ -211,6 +212,7 @@ namespace OpenRA.Platforms.Android
 				panQueue.Clear();
 				scrollQueue.Clear();
 				keyQueue.Clear();
+				textQueue.Clear();
 			}
 		}
 
@@ -226,6 +228,18 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
+		public string[] DrainText()
+		{
+			lock (queueLock)
+			{
+				if (textQueue.Count == 0)
+					return Array.Empty<string>();
+				var a = textQueue.ToArray();
+				textQueue.Clear();
+				return a;
+			}
+		}
+
 		/// <summary>Inject a key event from Android soft/hardware keyboard.</summary>
 		public void EnqueueKey(KeyInput ki)
 		{
@@ -236,26 +250,12 @@ namespace OpenRA.Platforms.Android
 		/// <summary>Type a Unicode string into the focused text field (Down+Up per char).</summary>
 		public void EnqueueText(string text)
 		{
+			// OpenRA TextFieldWidget inserts characters via HandleTextInput / OnTextInput,
+			// NOT via KeyInput.UnicodeChar (that path only handles BACKSPACE etc.).
 			if (string.IsNullOrEmpty(text))
 				return;
 			lock (queueLock)
-			{
-				foreach (var c in text)
-				{
-					// TextFieldWidget types on Down when UnicodeChar != 0
-					var ki = new KeyInput
-					{
-						Event = KeyInputEvent.Down,
-						Key = (Keycode)0,
-						Modifiers = Modifiers.None,
-						UnicodeChar = c,
-						MultiTapCount = 0
-					};
-					keyQueue.Enqueue(ki);
-					ki.Event = KeyInputEvent.Up;
-					keyQueue.Enqueue(ki);
-				}
-			}
+				textQueue.Enqueue(text);
 		}
 
 		public void EnqueueSpecialKey(Keycode key, KeyInputEvent ev)

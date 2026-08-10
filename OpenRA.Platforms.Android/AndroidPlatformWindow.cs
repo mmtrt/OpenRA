@@ -143,6 +143,12 @@ namespace OpenRA.Platforms.Android
 					catch { /* ignore */ }
 				}
 
+				foreach (var txt in input.DrainText())
+				{
+					try { inputHandler.OnTextInput(txt); }
+					catch { /* ignore */ }
+				}
+
 				// Soft keyboard for TextFieldWidget — launcher registers the callback.
 				try
 				{

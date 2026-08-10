@@ -183,44 +183,53 @@ namespace OpenRA.Android
 		public static void NotifyUserTouch()
 		{
 			lastUserTouchMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-			// Re-show IME after user dismissed it while TextField still has focus
-			if (wanted)
+			// If the user dismissed the system IME, clear visible so a later field tap can re-show.
+			// Do not call Show from here (that opened the keyboard on every UI tap).
+			if (visible && activity != null && hiddenInput != null)
 			{
-				var act = activity ?? MainActivity.Current;
-				act?.RunOnUiThread(() =>
+				try
 				{
-					if (wanted)
-						Show(force: true);
-				});
+					var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
+					if (imm != null && !imm.IsActive(hiddenInput))
+						visible = false;
+				}
+				catch { /* ignore */ }
 			}
 		}
 
 		public static void SetWanted(bool want)
 		{
-			if (want && !wanted)
-			{
-				var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-				if (now - lastUserTouchMs > UserTouchGraceMs)
-					return;
-			}
-
-			if (wanted == want)
-			{
-				// Focus still true but IME was dismissed → allow re-show on next touch via NotifyUserTouch
-				return;
-			}
-			wanted = want;
 			var act = activity ?? MainActivity.Current;
 			if (act == null)
 				return;
-			act.RunOnUiThread(() =>
+
+			if (want)
 			{
-				if (want)
-					Show(force: false);
-				else
-					Hide();
-			});
+				// Always require a recent touch to open/re-open — stops keyboard on every skirmish control
+				// and stops auto-reopen right after the user dismisses the IME.
+				var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+				var recentTouch = (now - lastUserTouchMs) <= UserTouchGraceMs;
+
+				if (visible)
+				{
+					wanted = true;
+					return;
+				}
+
+				if (!recentTouch)
+					return;
+
+				wanted = true;
+				act.RunOnUiThread(() => Show(force: true));
+				return;
+			}
+
+			if (!wanted && !visible)
+				return;
+			wanted = false;
+			act.RunOnUiThread(Hide);
 		}
+
 
 		public static void ForceHide()
 		{
