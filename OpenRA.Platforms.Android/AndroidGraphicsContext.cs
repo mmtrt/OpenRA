@@ -337,6 +337,20 @@ namespace OpenRA.Platforms.Android
 
 		public void SetBlendMode(BlendMode mode)
 		{
+			// Every case here must match OpenRA.Platforms.Default/Sdl2GraphicsContext.cs
+			// exactly — this was previously grouping several distinct blend modes together
+			// under one mode's blend func (Translucent used Alpha's func, Multiplicative and
+			// DoubleMultiplicative both used Multiply's func, LowAdditive used Additive's
+			// func, Screen had the wrong source factor), and — most impactfully — Alpha
+			// itself used GL_SRC_ALPHA as the source factor instead of GL_ONE. OpenRA sprite
+			// textures are premultiplied-alpha (see Util.PremultiplyAlpha, used throughout
+			// the sprite pipeline), and premultiplied-alpha blending requires GL_ONE as the
+			// source factor — GL_SRC_ALPHA double-applies the alpha multiplication (once
+			// already baked into the premultiplied source color, once again via the blend
+			// factor), systematically darkening every pixel with alpha < 1. Since Alpha is
+			// the default blend mode for nearly all sprite rendering — terrain, units,
+			// buildings, UI — this affected virtually everything on screen, not just one
+			// effect.
 			GLES20.GlBlendEquation(GLES20.GlFuncAdd);
 			switch (mode)
 			{
@@ -344,33 +358,39 @@ namespace OpenRA.Platforms.Android
 					GLES20.GlDisable(GLES20.GlBlend);
 					break;
 				case BlendMode.Alpha:
-				case BlendMode.Translucent:
 					GLES20.GlEnable(GLES20.GlBlend);
-					GLES20.GlBlendFunc(GLES20.GlSrcAlpha, GLES20.GlOneMinusSrcAlpha);
+					GLES20.GlBlendFunc(GLES20.GlOne, GLES20.GlOneMinusSrcAlpha);
 					break;
 				case BlendMode.Additive:
-				case BlendMode.LowAdditive:
-					GLES20.GlEnable(GLES20.GlBlend);
-					GLES20.GlBlendFunc(GLES20.GlOne, GLES20.GlOne);
-					break;
 				case BlendMode.Subtractive:
 					GLES20.GlEnable(GLES20.GlBlend);
-					GLES20.GlBlendEquation(GLES20.GlFuncReverseSubtract);
 					GLES20.GlBlendFunc(GLES20.GlOne, GLES20.GlOne);
+					if (mode == BlendMode.Subtractive)
+						GLES20.GlBlendEquationSeparate(GLES20.GlFuncReverseSubtract, GLES20.GlFuncAdd);
 					break;
 				case BlendMode.Multiply:
-				case BlendMode.Multiplicative:
-				case BlendMode.DoubleMultiplicative:
 					GLES20.GlEnable(GLES20.GlBlend);
 					GLES20.GlBlendFunc(GLES20.GlDstColor, GLES20.GlOneMinusSrcAlpha);
 					break;
+				case BlendMode.Multiplicative:
+					GLES20.GlEnable(GLES20.GlBlend);
+					GLES20.GlBlendFunc(GLES20.GlZero, GLES20.GlSrcColor);
+					break;
+				case BlendMode.DoubleMultiplicative:
+					GLES20.GlEnable(GLES20.GlBlend);
+					GLES20.GlBlendFunc(GLES20.GlDstColor, GLES20.GlSrcColor);
+					break;
+				case BlendMode.LowAdditive:
+					GLES20.GlEnable(GLES20.GlBlend);
+					GLES20.GlBlendFunc(GLES20.GlDstColor, GLES20.GlOne);
+					break;
 				case BlendMode.Screen:
 					GLES20.GlEnable(GLES20.GlBlend);
-					GLES20.GlBlendFunc(GLES20.GlOne, GLES20.GlOneMinusSrcColor);
+					GLES20.GlBlendFunc(GLES20.GlSrcColor, GLES20.GlOneMinusSrcColor);
 					break;
-				default:
+				case BlendMode.Translucent:
 					GLES20.GlEnable(GLES20.GlBlend);
-					GLES20.GlBlendFunc(GLES20.GlSrcAlpha, GLES20.GlOneMinusSrcAlpha);
+					GLES20.GlBlendFunc(GLES20.GlDstColor, GLES20.GlOneMinusDstColor);
 					break;
 			}
 		}
