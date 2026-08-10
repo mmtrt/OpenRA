@@ -190,7 +190,7 @@ namespace OpenRA.Android
 				try
 				{
 					var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
-					if (imm != null && !imm.IsActive(hiddenInput))
+					if (imm != null && !imm.IsActive)
 						visible = false;
 				}
 				catch { /* ignore */ }
