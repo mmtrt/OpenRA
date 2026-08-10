@@ -856,7 +856,7 @@ namespace OpenRA.Platforms.Android
 
 	sealed class AndroidShader : IShader
 	{
-		readonly int program;
+		int program;
 		readonly IShaderBindings bindings;
 		readonly Dictionary<string, int> uniformCache = new();
 		/// <summary>Sampler name → fixed texture unit (assigned at link, matches desktop Shader).</summary>
@@ -1192,6 +1192,21 @@ namespace OpenRA.Platforms.Android
 				GLES20.GlUseProgram(program);
 				GLES20.GlUniformMatrix4fv(loc, 1, false, mtx, 0);
 				GlDiagnostics.Check("Shader.SetMatrix(" + param + ")");
+			}
+		}
+
+		public void Dispose()
+		{
+			// Fixes a real leak: IShader previously had no Dispose at all, so every
+			// world-level post-process effect trait (Tint/Flash/Chronoshift/Menu — see
+			// RenderPostProcessPassBase) leaked its compiled GL program on every world
+			// reload (leaving a match and starting a new one). Not visible on desktop GPUs
+			// with generous VRAM, but a real accumulating cost on mobile across a long
+			// session of repeated skirmishes.
+			if (program != 0)
+			{
+				GLES20.GlDeleteProgram(program);
+				program = 0;
 			}
 		}
 	}
