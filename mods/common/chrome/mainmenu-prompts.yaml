@@ -317,80 +317,80 @@ Background@MAINMENU_INTRODUCTION_PROMPT:
 							Children:
 								LabelWithHighlight@DESC_SELECTION:
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-selection
 								LabelWithHighlight@DESC_COMMANDS:
-									Y: 18
+									Y: 17
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-commands
 								LabelWithHighlight@DESC_ORDERS:
-									Y: 36
+									Y: 34
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-orders
 								LabelWithHighlight@DESC_BUILDINGS:
-									Y: 54
+									Y: 51
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-buildings
 								LabelWithHighlight@DESC_SUPPORT:
-									Y: 72
+									Y: 68
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-support
 								LabelWithHighlight@DESC_ZOOM:
-									Y: 90
+									Y: 85
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-zoom
 								LabelWithHighlight@DESC_ZOOM_MODIFIER:
-									Y: 108
+									Y: 102
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-zoom-modifier
 								LabelWithHighlight@DESC_SCROLL_RIGHT:
-									Y: 126
+									Y: 119
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-scroll-right
 								LabelWithHighlight@DESC_SCROLL_MIDDLE:
-									Y: 144
+									Y: 136
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-scroll-middle
 								Label@DESC_EDGESCROLL:
 									X: 9
-									Y: 162
+									Y: 153
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-edgescroll
 								LabelWithHighlight@DESC_BOX:
-									Y: 180
+									Y: 170
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-box
 								LabelWithHighlight@DESC_DOUBLE:
-									Y: 198
+									Y: 187
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-double
 								LabelWithHighlight@DESC_ALTERNATE:
-									Y: 216
+									Y: 204
 									Width: PARENT_WIDTH
-									Height: 17
+									Height: 16
 									Font: Small
 									Text: label-mouse-control-desc-touch-alternate
 				Container@ROW:

@@ -242,20 +242,18 @@ namespace OpenRA.Platforms.Android
 			{
 				foreach (var c in text)
 				{
-					keyQueue.Enqueue(new KeyInput
+					// TextFieldWidget types on Down when UnicodeChar != 0
+					var ki = new KeyInput
 					{
 						Event = KeyInputEvent.Down,
 						Key = (Keycode)0,
 						Modifiers = Modifiers.None,
-						UnicodeChar = c
-					});
-					keyQueue.Enqueue(new KeyInput
-					{
-						Event = KeyInputEvent.Up,
-						Key = (Keycode)0,
-						Modifiers = Modifiers.None,
-						UnicodeChar = c
-					});
+						UnicodeChar = c,
+						MultiTapCount = 0
+					};
+					keyQueue.Enqueue(ki);
+					ki.Event = KeyInputEvent.Up;
+					keyQueue.Enqueue(ki);
 				}
 			}
 		}
