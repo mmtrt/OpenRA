@@ -10,12 +10,17 @@ using System;
 namespace OpenRA.Platforms.Android
 {
 	/// <summary>
-	/// Launcher assigns <see cref="SetWanted"/> to show/hide the system IME
-	/// when a text field holds keyboard focus.
+	/// Launcher assigns callbacks to show/hide the system IME when a text field is used.
 	/// </summary>
 	public static class AndroidKeyboardBridge
 	{
 		/// <summary>Argument: true = show soft keyboard, false = hide.</summary>
 		public static Action<bool> SetWanted;
+
+		/// <summary>
+		/// Fired when a mouse-down lands inside the focused TextField bounds.
+		/// Launcher uses this to open the IME (chat / name fields) without opening on random taps.
+		/// </summary>
+		public static Action TextFieldTapped;
 	}
 }

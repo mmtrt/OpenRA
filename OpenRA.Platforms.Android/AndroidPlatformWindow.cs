@@ -112,7 +112,26 @@ namespace OpenRA.Platforms.Android
 			if (inputHandler != null)
 			{
 				foreach (var mi in input.DrainMouse())
+				{
 					inputHandler.OnMouseInput(mi);
+
+					// Open IME only when the user actually taps inside an editable text field
+					// (fixes skirmish chat: field may already have focus so rising-edge never fires).
+					if (mi.Event == MouseInputEvent.Down)
+					{
+						try
+						{
+							var focus = OpenRA.Widgets.Ui.KeyboardFocusWidget;
+							if (focus != null && IsEditableTextEntry(focus))
+							{
+								var rb = focus.RenderBounds;
+								if (rb.Contains(mi.Location))
+									AndroidKeyboardBridge.TextFieldTapped?.Invoke();
+							}
+						}
+						catch { /* ignore */ }
+					}
+				}
 
 				foreach (var z in input.DrainZoom())
 				{

@@ -27,6 +27,7 @@ namespace OpenRA.Android
 		static AEditText hiddenInput;
 		static bool wanted;
 		static bool prevWant;
+		static bool textFieldTapped;
 		static bool visible;
 		static string lastText = "";
 		static bool suppressChange;
@@ -38,6 +39,12 @@ namespace OpenRA.Android
 			activity = act;
 			if (surface != null)
 				gameSurface = surface;
+
+			OpenRA.Platforms.Android.AndroidKeyboardBridge.TextFieldTapped = () =>
+			{
+				textFieldTapped = true;
+				lastUserTouchMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+			};
 
 			try
 			{
@@ -234,50 +241,49 @@ namespace OpenRA.Android
 		{
 			var act = activity ?? MainActivity.Current;
 			if (act == null)
+			{
+				textFieldTapped = false;
 				return;
+			}
 
 			if (want)
 			{
-				var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-				var recentTouch = lastUserTouchMs > 0
-					&& (now - lastUserTouchMs) <= UserTouchGraceMs;
-
-				// IME dismissed while focus still on field — yield focus and stop.
-				// Do not open on this same tap (it may be a map/button press).
+				// Sync when user dismissed Gboard
 				if (visible && !IsSystemImeShowing())
 				{
 					visible = false;
 					wanted = false;
 					prevWant = false;
-					lastUserTouchMs = 0;
 					YieldOpenRAFocus();
-					return;
 				}
 
-				// IME already showing
 				if (visible && IsSystemImeShowing())
 				{
 					wanted = true;
 					prevWant = true;
+					textFieldTapped = false;
 					return;
 				}
 
-				// ONLY open when text-field focus was just gained (rising edge) AND user
-				// just tapped. This blocks: auto-focus under skirmish, and "tap anywhere
-				// while an old TextField still holds focus".
-				var rising = !prevWant;
-				prevWant = true;
-				wanted = true;
-
-				if (rising && recentTouch)
+				// Open only when the click was inside the focused TextField bounds
+				// (player name, skirmish/lobby chat, etc.) — never on map/button taps.
+				if (textFieldTapped)
 				{
-					lastUserTouchMs = 0; // consume — one gesture, one open
+					textFieldTapped = false;
+					lastUserTouchMs = 0;
+					wanted = true;
+					prevWant = true;
 					act.RunOnUiThread(() => Show(force: true));
+					return;
 				}
+
+				wanted = true;
+				prevWant = true;
 				return;
 			}
 
 			// Focus left the text field
+			textFieldTapped = false;
 			prevWant = false;
 			lastUserTouchMs = 0;
 
@@ -286,7 +292,6 @@ namespace OpenRA.Android
 			wanted = false;
 			act.RunOnUiThread(Hide);
 		}
-
 
 		public static void ForceHide()
 		{
