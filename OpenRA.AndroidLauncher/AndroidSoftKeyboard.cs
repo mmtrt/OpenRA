@@ -57,7 +57,7 @@ namespace OpenRA.Android
 				FocusableInTouchMode = true,
 				Visibility = AViewStates.Invisible,
 				// Reduce landscape fullscreen extract UI when the system IME appears
-				ImeOptions = AImeAction.Done | AImeFlags.NoExtractUi | AImeFlags.NoFullscreen,
+				ImeOptions = (AImeAction)((int)AImeAction.Done | (int)AImeFlags.NoExtractUi | (int)AImeFlags.NoFullscreen),
 				InputType = AInputTypes.ClassText | AInputTypes.TextFlagNoSuggestions
 			};
 			var lp = new AFrameLayout.LayoutParams(1, 1)
