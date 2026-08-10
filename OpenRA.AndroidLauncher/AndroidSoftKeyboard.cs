@@ -26,6 +26,7 @@ namespace OpenRA.Android
 		static AView gameSurface;
 		static AEditText hiddenInput;
 		static bool wanted;
+		static bool prevWant;
 		static bool visible;
 		static string lastText = "";
 		static bool suppressChange;
@@ -203,12 +204,30 @@ namespace OpenRA.Android
 			}
 		}
 
+		static void YieldOpenRAFocus()
+		{
+			// Drop TextField keyboard focus so random taps do not keep needKb=true
+			try
+			{
+				var w = OpenRA.Widgets.Ui.KeyboardFocusWidget;
+				w?.YieldKeyboardFocus();
+			}
+			catch { /* Ui may not be ready */ }
+		}
+
 		public static void NotifyUserTouch()
 		{
 			lastUserTouchMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-			// User dismissed Gboard with the down arrow → visible stays stale true without this.
-			if (!IsSystemImeShowing())
+
+			// Gboard dismissed: clear our flag and yield OpenRA focus so a later tap on
+			// a button / map does not re-open the IME (needKb would stay true otherwise).
+			if (visible && !IsSystemImeShowing())
+			{
 				visible = false;
+				wanted = false;
+				prevWant = false;
+				YieldOpenRAFocus();
+			}
 		}
 
 		public static void SetWanted(bool want)
@@ -223,34 +242,43 @@ namespace OpenRA.Android
 				var recentTouch = lastUserTouchMs > 0
 					&& (now - lastUserTouchMs) <= UserTouchGraceMs;
 
-				// Sync stale state when IME was dismissed externally
+				// IME dismissed while focus still on field — yield focus and stop.
+				// Do not open on this same tap (it may be a map/button press).
 				if (visible && !IsSystemImeShowing())
+				{
 					visible = false;
+					wanted = false;
+					prevWant = false;
+					lastUserTouchMs = 0;
+					YieldOpenRAFocus();
+					return;
+				}
 
-				// Already up — nothing to do
+				// IME already showing
 				if (visible && IsSystemImeShowing())
 				{
 					wanted = true;
+					prevWant = true;
 					return;
 				}
 
-				// Open / re-open only when the user just tapped (not when a field auto-focuses
-				// under skirmish / lobby after a menu button press).
-				if (!recentTouch)
-				{
-					wanted = true; // focus wants keyboard, but wait for an explicit tap
-					return;
-				}
-
-				// Consume the touch so the same gesture cannot open skirmish AND the IME
-				lastUserTouchMs = 0;
+				// ONLY open when text-field focus was just gained (rising edge) AND user
+				// just tapped. This blocks: auto-focus under skirmish, and "tap anywhere
+				// while an old TextField still holds focus".
+				var rising = !prevWant;
+				prevWant = true;
 				wanted = true;
-				act.RunOnUiThread(() => Show(force: true));
+
+				if (rising && recentTouch)
+				{
+					lastUserTouchMs = 0; // consume — one gesture, one open
+					act.RunOnUiThread(() => Show(force: true));
+				}
 				return;
 			}
 
-			// No text-field focus: drop any pending "recent tap" so a later auto-focused
-			// name field under skirmish does not inherit the menu-button timestamp.
+			// Focus left the text field
+			prevWant = false;
 			lastUserTouchMs = 0;
 
 			if (!wanted && !visible)
@@ -332,7 +360,10 @@ namespace OpenRA.Android
 				hiddenInput.ClearFocus();
 				hiddenInput.Visibility = AViewStates.Invisible;
 				visible = false;
+				prevWant = false;
+				wanted = false;
 				try { gameSurface?.RequestFocus(); } catch { /* ignore */ }
+				YieldOpenRAFocus();
 				AndroidFileLog.Info("OpenRA.Keyboard", "IME hide");
 			}
 			catch (Exception e)
