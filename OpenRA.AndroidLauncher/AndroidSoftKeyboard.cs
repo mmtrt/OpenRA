@@ -98,7 +98,8 @@ namespace OpenRA.Android
 				}
 
 				// Hardware / some IMEs deliver printable keys here instead of TextChanged
-				var uni = e.Event.GetUnicodeChar();
+				// Xamarin binding requires metaState overload (no zero-arg GetUnicodeChar).
+				var uni = e.Event.GetUnicodeChar((int)e.Event.MetaState);
 				if (uni != 0 && !char.IsControl((char)uni))
 				{
 					EnqueueChars(((char)uni).ToString());
