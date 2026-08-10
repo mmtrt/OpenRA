@@ -62,7 +62,7 @@ namespace OpenRA.Android
 				else
 				{
 #pragma warning disable CS0618
-					var r = manager.RequestAudioFocus(this, Stream.Music, AudioFocus.Gain);
+					var r = manager.RequestAudioFocus(this, global::Android.Media.Stream.Music, AudioFocus.Gain);
 #pragma warning restore CS0618
 					hasFocus = r == AudioFocusRequest.Granted;
 				}

@@ -77,7 +77,7 @@ namespace OpenRA.Android
 				BootLog.Info("OnTrimMemory " + level);
 				// Only heavy GC on serious pressure — avoid hitching during play on moderate levels
 				if (level == TrimMemory.RunningCritical || level == TrimMemory.Complete
-				    || level == TrimMemory.ModComplete || level == TrimMemory.RunningLow)
+				    || level == TrimMemory.Moderate || level == TrimMemory.RunningLow)
 				{
 					GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized, false);
 				}
