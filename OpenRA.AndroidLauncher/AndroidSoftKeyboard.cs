@@ -180,21 +180,35 @@ namespace OpenRA.Android
 			input.EnqueueSpecialKey(key, OpenRA.KeyInputEvent.Up);
 		}
 
+		/// <summary>True when the system IME is actually covering part of the window.</summary>
+		static bool IsSystemImeShowing()
+		{
+			try
+			{
+				if (activity?.Window?.DecorView == null)
+					return false;
+				var decor = activity.Window.DecorView;
+				var r = new global::Android.Graphics.Rect();
+				decor.GetWindowVisibleDisplayFrame(r);
+				var screenH = decor.Height;
+				if (screenH <= 0)
+					screenH = activity.Resources.DisplayMetrics.HeightPixels;
+				// Keyboard typically covers >15% of the screen
+				var covered = screenH - r.Height();
+				return covered > screenH * 0.12f;
+			}
+			catch
+			{
+				return visible;
+			}
+		}
+
 		public static void NotifyUserTouch()
 		{
 			lastUserTouchMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-			// If the user dismissed the system IME, clear visible so a later field tap can re-show.
-			// Do not call Show from here (that opened the keyboard on every UI tap).
-			if (visible && activity != null && hiddenInput != null)
-			{
-				try
-				{
-					var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
-					if (imm != null && !imm.IsActive)
-						visible = false;
-				}
-				catch { /* ignore */ }
-			}
+			// User dismissed Gboard with the down arrow → visible stays stale true without this.
+			if (!IsSystemImeShowing())
+				visible = false;
 		}
 
 		public static void SetWanted(bool want)
@@ -205,24 +219,39 @@ namespace OpenRA.Android
 
 			if (want)
 			{
-				// Always require a recent touch to open/re-open — stops keyboard on every skirmish control
-				// and stops auto-reopen right after the user dismisses the IME.
 				var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-				var recentTouch = (now - lastUserTouchMs) <= UserTouchGraceMs;
+				var recentTouch = lastUserTouchMs > 0
+					&& (now - lastUserTouchMs) <= UserTouchGraceMs;
 
-				if (visible)
+				// Sync stale state when IME was dismissed externally
+				if (visible && !IsSystemImeShowing())
+					visible = false;
+
+				// Already up — nothing to do
+				if (visible && IsSystemImeShowing())
 				{
 					wanted = true;
 					return;
 				}
 
+				// Open / re-open only when the user just tapped (not when a field auto-focuses
+				// under skirmish / lobby after a menu button press).
 				if (!recentTouch)
+				{
+					wanted = true; // focus wants keyboard, but wait for an explicit tap
 					return;
+				}
 
+				// Consume the touch so the same gesture cannot open skirmish AND the IME
+				lastUserTouchMs = 0;
 				wanted = true;
 				act.RunOnUiThread(() => Show(force: true));
 				return;
 			}
+
+			// No text-field focus: drop any pending "recent tap" so a later auto-focused
+			// name field under skirmish does not inherit the menu-button timestamp.
+			lastUserTouchMs = 0;
 
 			if (!wanted && !visible)
 				return;
@@ -251,14 +280,24 @@ namespace OpenRA.Android
 				return;
 			try
 			{
+				// Pan the window so the focused field is not under the IME / notch
+				try
+				{
+					activity.Window?.SetSoftInputMode(SoftInput.AdjustPan | SoftInput.StateAlwaysVisible);
+				}
+				catch { /* ignore */ }
+
 				suppressChange = true;
 				hiddenInput.Text = "";
 				lastText = "";
 				suppressChange = false;
 				hiddenInput.Visibility = AViewStates.Visible;
+				// Clear then re-request focus so a second tap re-triggers the IME
+				hiddenInput.ClearFocus();
 				hiddenInput.RequestFocus();
 				var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
-				imm?.ShowSoftInput(hiddenInput, ShowFlags.Implicit);
+				// Forced is reliable when re-opening after the user dismissed Gboard
+				imm?.ShowSoftInput(hiddenInput, ShowFlags.Forced);
 				visible = true;
 				AndroidFileLog.Info("OpenRA.Keyboard", "IME show force=" + force);
 			}
@@ -274,6 +313,12 @@ namespace OpenRA.Android
 				return;
 			try
 			{
+				try
+				{
+					activity.Window?.SetSoftInputMode(SoftInput.AdjustNothing | SoftInput.StateAlwaysHidden);
+				}
+				catch { /* ignore */ }
+
 				var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
 				imm?.HideSoftInputFromWindow(hiddenInput.WindowToken, HideSoftInputFlags.None);
 				try
