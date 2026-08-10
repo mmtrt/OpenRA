@@ -102,13 +102,13 @@ namespace OpenRA.Platforms.Android
 				var key = context + ":0x" + err.ToString("X");
 				var first = false;
 				lock (Gate)
-					first = LoggedContexts.Add(key);
+				first = LoggedContexts.Add(key);
 
 				if (first)
 				{
 					AndroidPlatformLog.Error("OpenRA.GL.Error",
-						context + ": glGetError=0x" + err.ToString("X") + " (" + GlErrorName(err) + ")"
-						+ " totalErrors=" + totalErrors);
+											 context + ": glGetError=0x" + err.ToString("X") + " (" + GlErrorName(err) + ")"
+											 + " totalErrors=" + totalErrors);
 				}
 			}
 		}
@@ -131,11 +131,11 @@ namespace OpenRA.Platforms.Android
 				var maxVattribs = new int[1];
 				GLES20.GlGetIntegerv(0x8869 /* GL_MAX_VERTEX_ATTRIBS */, maxVattribs, 0);
 				AndroidPlatformLog.Info("OpenRA.GL.Caps",
-					"vendor=" + vendor + " renderer=" + renderer + " version=" + version
-					+ " MAX_TEXTURE_SIZE=" + maxTex[0]
-					+ " MAX_RENDERBUFFER_SIZE=" + maxRb[0]
-					+ " MAX_VERTEX_ATTRIBS=" + maxVattribs[0]
-					+ " surface=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
+										"vendor=" + vendor + " renderer=" + renderer + " version=" + version
+										+ " MAX_TEXTURE_SIZE=" + maxTex[0]
+										+ " MAX_RENDERBUFFER_SIZE=" + maxRb[0]
+										+ " MAX_VERTEX_ATTRIBS=" + maxVattribs[0]
+										+ " surface=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
 			}
 			catch (Exception e)
 			{
@@ -168,16 +168,16 @@ namespace OpenRA.Platforms.Android
 			var scale = win != null ? win.EffectiveWindowScale.ToString("0.###") : "?";
 
 			AndroidPlatformLog.Info("OpenRA.GL.View",
-				context
-				+ " vp=[" + vp[0] + "," + vp[1] + "," + vp[2] + "," + vp[3] + "]"
-				+ " scissor=" + (scOn[0] != 0 ? "ON" : "off")
-				+ " sc=[" + sc[0] + "," + sc[1] + "," + sc[2] + "," + sc[3] + "]"
-				+ " fbo=" + fb[0]
-				+ " native=" + native
-				+ " effective=" + effective
-				+ " surface=" + surface
-				+ " effScale=" + scale
-				+ " egl=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
+									context
+									+ " vp=[" + vp[0] + "," + vp[1] + "," + vp[2] + "," + vp[3] + "]"
+									+ " scissor=" + (scOn[0] != 0 ? "ON" : "off")
+									+ " sc=[" + sc[0] + "," + sc[1] + "," + sc[2] + "," + sc[3] + "]"
+									+ " fbo=" + fb[0]
+									+ " native=" + native
+									+ " effective=" + effective
+									+ " surface=" + surface
+									+ " effScale=" + scale
+									+ " egl=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
 		}
 
 		public static void CheckFramebuffer(string context, int status)
@@ -185,8 +185,8 @@ namespace OpenRA.Platforms.Android
 			if (status == GLES20.GlFramebufferComplete)
 				return;
 			AndroidPlatformLog.Error("OpenRA.GL.FBO",
-				context + ": incomplete status=0x" + status.ToString("X")
-				+ " (" + FboStatusName(status) + ")");
+									 context + ": incomplete status=0x" + status.ToString("X")
+									 + " (" + FboStatusName(status) + ")");
 		}
 
 		static string GlErrorName(int err) => err switch
@@ -301,8 +301,8 @@ namespace OpenRA.Platforms.Android
 			scissorLogCount++;
 			if (scissorLogCount <= 8 || scissorLogCount % 500 == 0)
 				AndroidPlatformLog.Info("OpenRA.GL.Scissor",
-					"#" + scissorLogCount + " xywh=[" + x + "," + y + "," + width + "," + height + "]"
-					+ " egl=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
+										"#" + scissorLogCount + " xywh=[" + x + "," + y + "," + width + "," + height + "]"
+										+ " egl=" + AndroidEgl.SurfaceWidth + "x" + AndroidEgl.SurfaceHeight);
 		}
 
 		public void DisableScissor() => GLES20.GlDisable(GLES20.GlScissorTest);
@@ -367,7 +367,7 @@ namespace OpenRA.Platforms.Android
 					GLES20.GlBlendFunc(GLES20.GlOne, GLES20.GlOne);
 					if (mode == BlendMode.Subtractive)
 						GLES20.GlBlendEquationSeparate(GLES20.GlFuncReverseSubtract, GLES20.GlFuncAdd);
-					break;
+				break;
 				case BlendMode.Multiply:
 					GLES20.GlEnable(GLES20.GlBlend);
 					GLES20.GlBlendFunc(GLES20.GlDstColor, GLES20.GlOneMinusSrcAlpha);
@@ -435,25 +435,25 @@ namespace OpenRA.Platforms.Android
 		public IVertexBuffer<T> CreateEmptyVertexBuffer<T>(int size) where T : struct
 			=> new AndroidVertexBuffer<T>(size);
 
-		public IVertexBuffer<T> CreateVertexBuffer<T>(T[] data, bool dynamic = true) where T : struct
-			=> new AndroidVertexBuffer<T>(data, dynamic);
+			public IVertexBuffer<T> CreateVertexBuffer<T>(T[] data, bool dynamic = true) where T : struct
+				=> new AndroidVertexBuffer<T>(data, dynamic);
 
-		public T[] CreateVertices<T>(int size) where T : struct => new T[size];
+				public T[] CreateVertices<T>(int size) where T : struct => new T[size];
 
-		public IIndexBuffer CreateIndexBuffer(uint[] indices) => new AndroidIndexBuffer(indices);
-		public ITexture CreateTexture() => new AndroidTexture();
-		public IFrameBuffer CreateFrameBuffer(Size s) => new AndroidFrameBuffer(s, Color.FromArgb(0));
-		public IFrameBuffer CreateFrameBuffer(Size s, Color clearColor) => new AndroidFrameBuffer(s, clearColor);
-		public IShader CreateShader(IShaderBindings shaderBindings) => new AndroidShader(shaderBindings);
+				public IIndexBuffer CreateIndexBuffer(uint[] indices) => new AndroidIndexBuffer(indices);
+				public ITexture CreateTexture() => new AndroidTexture();
+				public IFrameBuffer CreateFrameBuffer(Size s) => new AndroidFrameBuffer(s, Color.FromArgb(0));
+				public IFrameBuffer CreateFrameBuffer(Size s, Color clearColor) => new AndroidFrameBuffer(s, clearColor);
+				public IShader CreateShader(IShaderBindings shaderBindings) => new AndroidShader(shaderBindings);
 
-		public void Dispose()
-		{
-			if (vao != 0)
-			{
-				GLES30.GlDeleteVertexArrays(1, new[] { vao }, 0);
-				vao = 0;
-			}
-		}
+				public void Dispose()
+				{
+					if (vao != 0)
+					{
+						GLES30.GlDeleteVertexArrays(1, new[] { vao }, 0);
+						vao = 0;
+					}
+				}
 	}
 
 	sealed class AndroidVertexBuffer<T> : IVertexBuffer<T> where T : struct
@@ -578,7 +578,17 @@ namespace OpenRA.Platforms.Android
 		int texture;
 		Size size;
 		// Match desktop Texture default (Linear). Palette sheets forced Nearest in SetData.
-		TextureScaleFilter scaleFilter = TextureScaleFilter.Linear;
+		// Matches desktop's OpenRA.Platforms.Default/Texture.cs, where this field has no
+		// initializer and so implicitly defaults to TextureScaleFilter.Nearest (value 0).
+		// This was previously explicitly defaulted to Linear here — for any texture the
+		// shared/cross-platform code doesn't explicitly set a filter on (relying on the
+		// same implicit-Nearest default desktop has), Android would sample with bilinear
+		// filtering instead. Most OpenRA texture data is palette-indexed: blending two
+		// different palette *indices* together produces a garbage intermediate index,
+		// which samples the palette at an unintended row — exactly the pink/magenta
+		// fringing visible on detailed sprites (small, palette-dense sprites like infantry
+		// are hit hardest, since adjacent pixels are more likely to differ in index).
+		TextureScaleFilter scaleFilter = TextureScaleFilter.Nearest;
 
 		public Size Size => size;
 
@@ -647,19 +657,19 @@ namespace OpenRA.Platforms.Android
 			var bb = GlesBuffers.ToByteBuffer(colors);
 			while (GLES20.GlGetError() != GLES20.GlNoError) { }
 			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
-				GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
+								GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
 			var err = GLES20.GlGetError();
 			if (err != GLES20.GlNoError)
 			{
 				AndroidPlatformLog.Error("OpenRA.GL",
-					"SetData BGRA8_EXT failed 0x" + err.ToString("X") + " " + width + "x" + height
-					+ " — EXT_texture_format_BGRA8888 required for Embedded");
+										 "SetData BGRA8_EXT failed 0x" + err.ToString("X") + " " + width + "x" + height
+										 + " — EXT_texture_format_BGRA8888 required for Embedded");
 			}
 			else if (!loggedBgraOk)
 			{
 				loggedBgraOk = true;
 				AndroidPlatformLog.Info("OpenRA.GL",
-					"SetData BGRA8_EXT OK (first) " + width + "x" + height);
+										"SetData BGRA8_EXT OK (first) " + width + "x" + height);
 			}
 
 			ApplyPaletteFilterIfNeeded(width);
@@ -684,7 +694,7 @@ namespace OpenRA.Platforms.Android
 			var bb = GlesBuffers.ToByteBuffer(data);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
 			GLES30.GlTexImage2D(GLES20.GlTexture2d, 0, GLES30.GlRgba16f, width, height, 0,
-				GLES20.GlRgba, GLES20.GlFloat, bb);
+								GLES20.GlRgba, GLES20.GlFloat, bb);
 		}
 
 		public void SetEmpty(int width, int height)
@@ -700,14 +710,14 @@ namespace OpenRA.Platforms.Android
 			// with only some UI/sprites surviving. Always use RGBA8 for empty FBO textures.
 			// Sprite uploads still use BGRA8_EXT in SetData().
 			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, width, height, 0,
-				GLES20.GlRgba, GLES20.GlUnsignedByte, null);
+								GLES20.GlRgba, GLES20.GlUnsignedByte, null);
 			var err = GLES20.GlGetError();
 			if (err != GLES20.GlNoError)
 				AndroidPlatformLog.Error("OpenRA.GL",
-					"SetEmpty RGBA8 " + width + "x" + height + " glError=0x" + err.ToString("X")
-					+ (err == 0x505 ? " GL_OUT_OF_MEMORY — world FBO/sheets may be incomplete" : ""));
-			else
-				GlDiagnostics.Check("Texture.SetEmpty RGBA8 " + width + "x" + height);
+										 "SetEmpty RGBA8 " + width + "x" + height + " glError=0x" + err.ToString("X")
+										 + (err == 0x505 ? " GL_OUT_OF_MEMORY — world FBO/sheets may be incomplete" : ""));
+				else
+					GlDiagnostics.Check("Texture.SetEmpty RGBA8 " + width + "x" + height);
 		}
 
 		public void SetDataFromReadBuffer(Rectangle rect)
@@ -760,7 +770,7 @@ namespace OpenRA.Platforms.Android
 
 			texture.SetEmpty(size.Width, size.Height);
 			GLES20.GlFramebufferTexture2D(GLES20.GlFramebuffer, GLES20.GlColorAttachment0,
-				GLES20.GlTexture2d, texture.TextureId, 0);
+										  GLES20.GlTexture2d, texture.TextureId, 0);
 
 			var rb = new int[1];
 			GLES20.GlGenRenderbuffers(1, rb, 0);
@@ -768,20 +778,20 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlBindRenderbuffer(GLES20.GlRenderbuffer, depth);
 			GLES20.GlRenderbufferStorage(GLES20.GlRenderbuffer, GLES20.GlDepthComponent16, size.Width, size.Height);
 			GLES20.GlFramebufferRenderbuffer(GLES20.GlFramebuffer, GLES20.GlDepthAttachment,
-				GLES20.GlRenderbuffer, depth);
+											 GLES20.GlRenderbuffer, depth);
 
 			var status = GLES20.GlCheckFramebufferStatus(GLES20.GlFramebuffer);
 			GlDiagnostics.CheckFramebuffer("Create " + size.Width + "x" + size.Height, status);
 			AndroidPlatformLog.Info("OpenRA.GL",
-				"FrameBuffer.Create " + size.Width + "x" + size.Height
-				+ " status=0x" + status.ToString("X")
-				+ (status == GLES20.GlFramebufferComplete ? " COMPLETE" : " INCOMPLETE — world will be black"));
+									"FrameBuffer.Create " + size.Width + "x" + size.Height
+									+ " status=0x" + status.ToString("X")
+									+ (status == GLES20.GlFramebufferComplete ? " COMPLETE" : " INCOMPLETE — world will be black"));
 			if (status != GLES20.GlFramebufferComplete)
 				AndroidPlatformLog.Error("OpenRA.GL",
-					"Framebuffer incomplete 0x" + status.ToString("X")
-					+ " size=" + size.Width + "x" + size.Height
-					+ " — terrain/world buffer will not render");
-			GlDiagnostics.Check("FrameBuffer.Create after status check");
+										 "Framebuffer incomplete 0x" + status.ToString("X")
+										 + " size=" + size.Width + "x" + size.Height
+										 + " — terrain/world buffer will not render");
+				GlDiagnostics.Check("FrameBuffer.Create after status check");
 
 			GLES20.GlBindFramebuffer(GLES20.GlFramebuffer, 0);
 		}
@@ -812,10 +822,10 @@ namespace OpenRA.Platforms.Android
 			{
 				var status = GLES20.GlCheckFramebufferStatus(GLES20.GlFramebuffer);
 				AndroidPlatformLog.Info("OpenRA.GL.View",
-					"FBO.Bind #" + bindLogCount + " " + size.Width + "x" + size.Height
-					+ " status=0x" + status.ToString("X")
-					+ (status == GLES20.GlFramebufferComplete ? " OK" : " INCOMPLETE")
-					+ " clearA=" + ca.ToString("0.##"));
+										"FBO.Bind #" + bindLogCount + " " + size.Width + "x" + size.Height
+										+ " status=0x" + status.ToString("X")
+										+ (status == GLES20.GlFramebufferComplete ? " OK" : " INCOMPLETE")
+										+ " clearA=" + ca.ToString("0.##"));
 			}
 		}
 
@@ -914,7 +924,7 @@ namespace OpenRA.Platforms.Android
 			}
 
 			AndroidPlatformLog.Info("OpenRA.GL", "Shader linked: " + bindings.VertexShaderName
-				+ " samplers=" + samplerUnits.Count);
+			+ " samplers=" + samplerUnits.Count);
 		}
 
 
@@ -1000,7 +1010,7 @@ namespace OpenRA.Platforms.Android
 				{
 					var a = bindings.Attributes[i];
 					desc += " | [" + i + "] " + a.Name + " type=0x" + ((int)a.Type).ToString("X")
-						+ " n=" + a.Components + " off=" + a.Offset;
+					+ " n=" + a.Components + " off=" + a.Offset;
 				}
 				AndroidPlatformLog.Info("OpenRA.GL.Attrib", desc);
 			}
@@ -1013,16 +1023,16 @@ namespace OpenRA.Platforms.Android
 				{
 					// Last arg = byte offset into currently bound ARRAY_BUFFER (desktop: new IntPtr(offset)).
 					GLES20.GlVertexAttribPointer(i, attribute.Components, GLES20.GlFloat, false,
-						bindings.Stride, attribute.Offset);
+												 bindings.Stride, attribute.Offset);
 				}
 				else
 				{
 					// UInt = 0x1405 GL_UNSIGNED_INT — packs palette channel flags.
 					var glType = attribute.Type == ShaderVertexAttributeType.UInt
-						? GLES30.GlUnsignedInt
-						: GLES30.GlInt;
+					? GLES30.GlUnsignedInt
+					: GLES30.GlInt;
 					GLES30.GlVertexAttribIPointer(i, attribute.Components, glType,
-						bindings.Stride, attribute.Offset);
+												  bindings.Stride, attribute.Offset);
 				}
 				GlDiagnostics.Check("Shader.Bind attrib[" + i + "]=" + attribute.Name);
 			}
@@ -1128,9 +1138,9 @@ namespace OpenRA.Platforms.Android
 				projLogCount++;
 				if (projLogCount <= 12 || projLogCount % 600 == 0)
 					AndroidPlatformLog.Info("OpenRA.GL.Proj",
-						"#" + projLogCount + " program=" + program + " " + name
-						+ "=(" + x.ToString("0.####") + "," + y.ToString("0.####") + "," + z.ToString("0.####") + ")"
-						+ " loc=" + loc);
+											"#" + projLogCount + " program=" + program + " " + name
+											+ "=(" + x.ToString("0.####") + "," + y.ToString("0.####") + "," + z.ToString("0.####") + ")"
+											+ " loc=" + loc);
 			}
 		}
 
@@ -1164,7 +1174,7 @@ namespace OpenRA.Platforms.Android
 				unit = 0;
 				foreach (var u in samplerUnits.Values)
 					if (u >= unit) unit = u + 1;
-				samplerUnits[param] = unit;
+					samplerUnits[param] = unit;
 				GLES20.GlUseProgram(program);
 				GLES20.GlUniform1i(locFallback, unit);
 			}
