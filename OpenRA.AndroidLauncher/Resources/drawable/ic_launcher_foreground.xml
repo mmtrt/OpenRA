@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 18% inset ≈ Android adaptive-icon safe zone so artwork is not zoomed/cropped -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ra_icon"
+    android:drawable="@drawable/icon_ra"
     android:insetLeft="18%"
     android:insetTop="18%"
     android:insetRight="18%"
