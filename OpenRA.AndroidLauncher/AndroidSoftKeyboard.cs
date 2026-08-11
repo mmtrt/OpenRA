@@ -188,6 +188,9 @@ namespace OpenRA.Android
 			input.EnqueueSpecialKey(key, OpenRA.KeyInputEvent.Up);
 		}
 
+		static long imeShownAtMs;
+		const int ImeOpenGraceMs = 800; // ignore "dismissed" while keyboard animates open
+
 		/// <summary>True when the system IME is actually covering part of the window.</summary>
 		static bool IsSystemImeShowing()
 		{
@@ -201,7 +204,6 @@ namespace OpenRA.Android
 				var screenH = decor.Height;
 				if (screenH <= 0)
 					screenH = activity.Resources.DisplayMetrics.HeightPixels;
-				// Keyboard typically covers >15% of the screen
 				var covered = screenH - r.Height();
 				return covered > screenH * 0.12f;
 			}
@@ -211,30 +213,21 @@ namespace OpenRA.Android
 			}
 		}
 
-		static void YieldOpenRAFocus()
+		static bool InOpenGrace()
 		{
-			// Drop TextField keyboard focus so random taps do not keep needKb=true
-			try
-			{
-				var w = OpenRA.Widgets.Ui.KeyboardFocusWidget;
-				w?.YieldKeyboardFocus();
-			}
-			catch { /* Ui may not be ready */ }
+			if (imeShownAtMs <= 0)
+				return false;
+			var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+			return (now - imeShownAtMs) < ImeOpenGraceMs;
 		}
 
 		public static void NotifyUserTouch()
 		{
 			lastUserTouchMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-			// Gboard dismissed: clear our flag and yield OpenRA focus so a later tap on
-			// a button / map does not re-open the IME (needKb would stay true otherwise).
-			if (visible && !IsSystemImeShowing())
-			{
+			// Do NOT yield focus or hide here — false "not showing" during open animation
+			// was closing the keyboard and forcing 3+ taps.
+			if (visible && !InOpenGrace() && !IsSystemImeShowing())
 				visible = false;
-				wanted = false;
-				prevWant = false;
-				YieldOpenRAFocus();
-			}
 		}
 
 		public static void SetWanted(bool want)
@@ -248,15 +241,16 @@ namespace OpenRA.Android
 
 			if (want)
 			{
-				// Sync when user dismissed Gboard
-				if (visible && !IsSystemImeShowing())
+				// Still opening — leave it alone
+				if (visible && InOpenGrace())
 				{
-					visible = false;
-					wanted = false;
-					prevWant = false;
-					YieldOpenRAFocus();
+					wanted = true;
+					prevWant = true;
+					textFieldTapped = false;
+					return;
 				}
 
+				// IME up
 				if (visible && IsSystemImeShowing())
 				{
 					wanted = true;
@@ -265,12 +259,14 @@ namespace OpenRA.Android
 					return;
 				}
 
-				// Open only when the click was inside the focused TextField bounds
-				// (player name, skirmish/lobby chat, etc.) — never on map/button taps.
+				// Stale visible flag after user dismissed Gboard (outside open grace)
+				if (visible && !InOpenGrace() && !IsSystemImeShowing())
+					visible = false;
+
+				// User tapped inside the focused TextField → open (or re-open)
 				if (textFieldTapped)
 				{
 					textFieldTapped = false;
-					lastUserTouchMs = 0;
 					wanted = true;
 					prevWant = true;
 					act.RunOnUiThread(() => Show(force: true));
@@ -282,7 +278,7 @@ namespace OpenRA.Android
 				return;
 			}
 
-			// Focus left the text field
+			// Focus left the text field — hide
 			textFieldTapped = false;
 			prevWant = false;
 			lastUserTouchMs = 0;
@@ -296,6 +292,8 @@ namespace OpenRA.Android
 		public static void ForceHide()
 		{
 			wanted = false;
+			prevWant = false;
+			textFieldTapped = false;
 			var act = activity ?? MainActivity.Current;
 			if (act == null)
 			{
@@ -313,7 +311,6 @@ namespace OpenRA.Android
 				return;
 			try
 			{
-				// Pan the window so the focused field is not under the IME / notch
 				try
 				{
 					activity.Window?.SetSoftInputMode(SoftInput.AdjustPan | SoftInput.StateAlwaysVisible);
@@ -325,14 +322,27 @@ namespace OpenRA.Android
 				lastText = "";
 				suppressChange = false;
 				hiddenInput.Visibility = AViewStates.Visible;
-				// Clear then re-request focus so a second tap re-triggers the IME
-				hiddenInput.ClearFocus();
+				// Request focus without ClearFocus first — ClearFocus was racing and dropping IME
 				hiddenInput.RequestFocus();
 				var imm = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
-				// Forced is reliable when re-opening after the user dismissed Gboard
 				imm?.ShowSoftInput(hiddenInput, ShowFlags.Forced);
+				// Retry once shortly after — some devices ignore the first Forced show
+				hiddenInput.PostDelayed(() =>
+				{
+					try
+					{
+						if (!wanted)
+							return;
+						hiddenInput.RequestFocus();
+						var imm2 = (InputMethodManager)activity.GetSystemService(Context.InputMethodService);
+						imm2?.ShowSoftInput(hiddenInput, ShowFlags.Forced);
+					}
+					catch { /* ignore */ }
+				}, 50);
+
 				visible = true;
-				AndroidFileLog.Info("OpenRA.Keyboard", "IME show force=" + force);
+				imeShownAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+				AndroidFileLog.Info("OpenRA.Keyboard", "IME show");
 			}
 			catch (Exception e)
 			{
@@ -365,10 +375,11 @@ namespace OpenRA.Android
 				hiddenInput.ClearFocus();
 				hiddenInput.Visibility = AViewStates.Invisible;
 				visible = false;
-				prevWant = false;
+				imeShownAtMs = 0;
 				wanted = false;
+				prevWant = false;
 				try { gameSurface?.RequestFocus(); } catch { /* ignore */ }
-				YieldOpenRAFocus();
+				// Do NOT YieldOpenRAFocus here — that forced extra taps to re-focus the field
 				AndroidFileLog.Info("OpenRA.Keyboard", "IME hide");
 			}
 			catch (Exception e)
