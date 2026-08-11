@@ -575,6 +575,20 @@ namespace OpenRA.Platforms.Android
 
 		static bool loggedBgraOk;
 
+		// Whether GL_BGRA8_EXT (EXT_texture_format_BGRA8888) uploads actually work on this
+		// device's driver. Null = not yet determined. This is NOT universal across Android
+		// GPUs: it works on Mali (which is why the direct-upload path above exists at all —
+		// it avoids a CPU-side channel swap on devices that support it), but Adreno GPUs
+		// (confirmed on an Adreno 610) reject the GL_BGRA8_EXT enum outright with
+		// GL_INVALID_VALUE (0x501) — not the GL_INVALID_OPERATION Mali gives when it merely
+		// dislikes a parameter combination, but "I don't recognize this enum" — meaning the
+		// extension isn't supported at all on that hardware. Previously there was no
+		// fallback at all: every texture upload failed silently, leaving every sprite,
+		// palette, and UI texture completely empty forever — exactly a black screen
+		// followed eventually by a crash once enough downstream code hit unusable texture
+		// state. Determined once rather than retried on every single texture upload.
+		static bool? bgra8ExtSupported;
+
 		int texture;
 		Size size;
 		// Match desktop Texture default (Linear). Palette sheets forced Nearest in SetData.
@@ -650,28 +664,60 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
 			ApplyScaleFilter();
 
-			// Match OpenRA.Platforms.Default.Texture for Embedded:
+			// Preferred path: match OpenRA.Platforms.Default.Texture for Embedded —
 			//   internal = GL_BGRA8_EXT (0x93A1), format = GL_BGRA (0x80E1)
-			// Mali rejects RGBA8 internal + BGRA format (0x502 INVALID_OPERATION).
-			// OpenRA sprite bytes are BGRA; keep that order — no CPU R/B swap.
-			var bb = GlesBuffers.ToByteBuffer(colors);
-			while (GLES20.GlGetError() != GLES20.GlNoError) { }
-			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
-								GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
-			var err = GLES20.GlGetError();
-			if (err != GLES20.GlNoError)
+			// OpenRA sprite bytes are BGRA; this avoids any CPU-side reordering when the
+			// driver supports the extension (confirmed working on Mali). Falls back to
+			// RGBA8 internal format with an explicit R/B channel swap when it doesn't
+			// (confirmed necessary on Adreno) — see bgra8ExtSupported above for why this
+			// is only probed once rather than on every call.
+			if (bgra8ExtSupported != false)
 			{
-				AndroidPlatformLog.Error("OpenRA.GL",
-										 "SetData BGRA8_EXT failed 0x" + err.ToString("X") + " " + width + "x" + height
-										 + " — EXT_texture_format_BGRA8888 required for Embedded");
-			}
-			else if (!loggedBgraOk)
-			{
-				loggedBgraOk = true;
-				AndroidPlatformLog.Info("OpenRA.GL",
-										"SetData BGRA8_EXT OK (first) " + width + "x" + height);
+				var bb = GlesBuffers.ToByteBuffer(colors);
+				while (GLES20.GlGetError() != GLES20.GlNoError) { }
+				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
+									GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
+				var err = GLES20.GlGetError();
+				if (err == GLES20.GlNoError)
+				{
+					bgra8ExtSupported = true;
+					if (!loggedBgraOk)
+					{
+						loggedBgraOk = true;
+						AndroidPlatformLog.Info("OpenRA.GL",
+												"SetData BGRA8_EXT OK (first) " + width + "x" + height);
+					}
+
+					ApplyPaletteFilterIfNeeded(width);
+					return;
+				}
+
+				bgra8ExtSupported = false;
+				AndroidPlatformLog.Warn("OpenRA.GL",
+										"GL_BGRA8_EXT upload failed 0x" + err.ToString("X") +
+										" — driver does not support EXT_texture_format_BGRA8888;" +
+										" using RGBA8 with CPU-side R/B swap for all textures from now on");
 			}
 
+			// CRITICAL: colors[] is laid out in BGRA byte order (OpenRA's internal
+			// convention). Simply re-uploading those same bytes labeled as GL_RGBA does NOT
+			// reinterpret them — it tells the GPU the red and blue channels are in the
+			// opposite of their actual positions, systematically swapping red and blue in
+			// every pixel sampled from this texture. We must swap them back on the CPU
+			// before upload so the final rendered colors are correct.
+			var swapped = new byte[colors.Length];
+			for (var i = 0; i + 3 < colors.Length; i += 4)
+			{
+				swapped[i] = colors[i + 2];     // R <- B
+				swapped[i + 1] = colors[i + 1]; // G
+				swapped[i + 2] = colors[i];     // B <- R
+				swapped[i + 3] = colors[i + 3]; // A
+			}
+
+			var swappedBb = GlesBuffers.ToByteBuffer(swapped);
+			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
+								GLES20.GlRgba, GLES20.GlUnsignedByte, swappedBb);
+			GlDiagnostics.Check("Texture.SetData RGBA fallback (R/B swapped) " + width + "x" + height);
 			ApplyPaletteFilterIfNeeded(width);
 		}
 
