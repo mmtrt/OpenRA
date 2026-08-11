@@ -246,13 +246,25 @@ namespace OpenRA.Server
 				var listener = new TcpListener(endpoint);
 				try
 				{
-					try
+					// IPv6Only only makes sense on an IPv6 socket (it controls whether that
+					// socket ALSO accepts IPv4-mapped connections). Previously this was
+					// attempted unconditionally, including for plain IPv4 endpoints like
+					// 127.0.0.1 — desktop's socket stack tends to silently tolerate that as
+					// a no-op, but Android's networking stack rejects it outright with
+					// "Protocol not available". The failure was already caught and logged
+					// as a harmless warning (the listener still starts fine either way), so
+					// this isn't fixing a crash — it just stops attempting and logging a
+					// call that was never applicable for these endpoints in the first place.
+					if (endpoint.AddressFamily == AddressFamily.InterNetworkV6)
 					{
-						listener.Server.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, 1);
-					}
-					catch (Exception ex) when (ex is SocketException || ex is ArgumentException)
-					{
-						Log.Write("server", $"Failed to set socket option on {endpoint}: {ex.Message}");
+						try
+						{
+							listener.Server.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, 1);
+						}
+						catch (Exception ex) when (ex is SocketException || ex is ArgumentException)
+						{
+							Log.Write("server", $"Failed to set socket option on {endpoint}: {ex.Message}");
+						}
 					}
 
 					listener.Start();
