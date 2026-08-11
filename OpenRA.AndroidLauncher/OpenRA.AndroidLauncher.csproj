@@ -13,7 +13,6 @@
     <ApplicationTitle Condition="'$(OpenRAMod)' == 'd2k'">OpenRA Dune 2000</ApplicationTitle>
     <ApplicationTitle Condition="'$(OpenRAMod)' == 'ts'">OpenRA Tiberian Sun</ApplicationTitle>
     <ApplicationTitle Condition="'$(ApplicationTitle)' == ''">OpenRA</ApplicationTitle>
-    <ApplicationIcon>@mipmap/appicon</ApplicationIcon>
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
     <AndroidMinSdkVersion>26</AndroidMinSdkVersion>

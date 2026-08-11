@@ -16,6 +16,8 @@ namespace OpenRA.Android
 		public string AppImageName { get; init; }        // OpenRA-Red-Alert
 		public string ApplicationLabel { get; init; }    // OpenRA Red Alert
 		public string MirrorListUrl { get; init; }
+		/// <summary>Used when the official mirrors.txt is missing (404) or empty.</summary>
+		public string[] FallbackPackageUrls { get; init; } = System.Array.Empty<string>();
 		public string ContentRelativeDir { get; init; }  // Content/ra/v2
 		public string[] MarkerFiles { get; init; }       // relative to SupportDir
 		public int ThemePrimary { get; init; }           // ARGB card accent
@@ -68,12 +70,19 @@ namespace OpenRA.Android
 			DisplayName = "Tiberian Dawn",
 			AppImageName = "OpenRA-Tiberian-Dawn",
 			ApplicationLabel = "OpenRA Tiberian Dawn",
+			// Official cnc-quickinstall-mirrors.txt currently 404s — use cnc-packages.zip fallbacks.
 			MirrorListUrl = "https://www.openra.net/packages/cnc-quickinstall-mirrors.txt",
+			FallbackPackageUrls = new[]
+			{
+				"https://cdn.mailaender.name/openra/cnc-packages.zip",
+				"https://republic.community/hosted/files/command-and-conquer/openra/cnc-packages.zip",
+				"https://openra.0x47.net/cnc-packages.zip",
+			},
 			ContentRelativeDir = "Content/cnc",
 			MarkerFiles = new[]
 			{
 				"Content/cnc/speech.mix", "Content/cnc/sounds.mix", "Content/cnc/temperat.mix",
-				"Content/cnc/winter.mix", "Content/cnc/desert.mix",
+				"Content/cnc/winter.mix", "Content/cnc/desert.mix", "Content/cnc/conquer.mix",
 			},
 			ThemePrimary = unchecked((int)0xFF3D7A28),
 			ThemeBackground = unchecked((int)0xDC121A10),
@@ -91,10 +100,17 @@ namespace OpenRA.Android
 			AppImageName = "OpenRA-Dune-2000",
 			ApplicationLabel = "OpenRA Dune 2000",
 			MirrorListUrl = "https://www.openra.net/packages/d2k-quickinstall-mirrors.txt",
-			ContentRelativeDir = "Content/d2k/v2",
+			FallbackPackageUrls = new[]
+			{
+				"https://cdn.mailaender.name/openra/d2k-quickinstall.zip",
+				"https://republic.community/hosted/files/command-and-conquer/openra/d2k-quickinstall.zip",
+				"https://openra.0x47.net/d2k-quickinstall.zip",
+			},
+			// Zip root is v2/… — extract into Content/d2k so paths become Content/d2k/v2/…
+			ContentRelativeDir = "Content/d2k",
 			MarkerFiles = new[]
 			{
-				"Content/d2k/v2/DATA.R8", "Content/d2k/v2/MOUSE.R8",
+				"Content/d2k/v2/DATA.R8", "Content/d2k/v2/BLOXBASE.R8",
 			},
 			ThemePrimary = unchecked((int)0xFFB08830),
 			ThemeBackground = unchecked((int)0xDC1C1810),
@@ -112,6 +128,12 @@ namespace OpenRA.Android
 			AppImageName = "OpenRA-Tiberian-Sun",
 			ApplicationLabel = "OpenRA Tiberian Sun",
 			MirrorListUrl = "https://www.openra.net/packages/ts-quickinstall-mirrors.txt",
+			FallbackPackageUrls = new[]
+			{
+				"https://cdn.mailaender.name/openra/ts-quickinstall.zip",
+				"https://republic.community/hosted/files/command-and-conquer/openra/ts-quickinstall.zip",
+				"https://openra.0x47.net/ts-quickinstall.zip",
+			},
 			ContentRelativeDir = "Content/ts",
 			MarkerFiles = new[]
 			{
