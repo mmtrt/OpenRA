@@ -1,4 +1,4 @@
-// Detects whether Red Alert content under SupportDir/Content/ra/v2 satisfies the engine.
+// Detects whether mod content under SupportDir is present for the built launcher mod.
 
 using System;
 using System.Collections.Generic;
@@ -9,95 +9,73 @@ namespace OpenRA.Android
 {
 	public static class ContentProbe
 	{
-		/// <summary>Base mixes — ContentPackage@base TestFiles.</summary>
-		public static readonly string[] RequiredBaseFiles =
-		{
-			"Content/ra/v2/allies.mix",
-			"Content/ra/v2/conquer.mix",
-			"Content/ra/v2/interior.mix",
-			"Content/ra/v2/hires.mix",
-			"Content/ra/v2/lores.mix",
-			"Content/ra/v2/local.mix",
-			"Content/ra/v2/speech.mix",
-			"Content/ra/v2/russian.mix",
-			"Content/ra/v2/snow.mix",
-			"Content/ra/v2/sounds.mix",
-			"Content/ra/v2/temperat.mix",
-		};
+		public static ModInfo Mod => ModInfo.Current;
 
-		/// <summary>Aftermath + desert — required by ra mod.yaml ContentPackages / RequiredContentFiles.</summary>
-		public static readonly string[] RequiredExpansionFiles =
-		{
-			"Content/ra/v2/expand/expand2.mix",
-			"Content/ra/v2/expand/hires1.mix",
-			"Content/ra/v2/expand/lores1.mix",
-			"Content/ra/v2/cnc/desert.mix",
-			// Sample of RequiredContentFiles (.aud) — if these exist, expand/ mounted content is present.
-			"Content/ra/v2/expand/chrotnk1.aud",
-			"Content/ra/v2/expand/fixit1.aud",
-			"Content/ra/v2/expand/jyes1.aud",
-		};
-
-		public static string ContentRaV2(string supportDir)
-			=> Path.Combine(supportDir, "Content", "ra", "v2");
+		public static string ContentRoot(string supportDir)
+			=> Path.Combine(supportDir, Mod.ContentRelativeDir.Replace('/', Path.DirectorySeparatorChar));
 
 		public static bool IsBaseContentInstalled(string supportDir)
-			=> AllExist(supportDir, RequiredBaseFiles);
+		{
+			if (string.IsNullOrEmpty(supportDir))
+				return false;
+			if (Mod.MarkerFiles.Length > 0
+			    && Mod.MarkerFiles.All(rel =>
+			    {
+				    var path = Path.Combine(supportDir, rel.Replace('/', Path.DirectorySeparatorChar));
+				    return File.Exists(path) && new FileInfo(path).Length > 0;
+			    }))
+				return true;
 
-		/// <summary>True when base + required expansion files are on disk (engine should not force ra-content).</summary>
+			// Fallback after quickinstall layout drift: content dir with several non-empty files
+			var root = ContentRoot(supportDir);
+			if (!Directory.Exists(root))
+				return false;
+			var n = 0;
+			foreach (var f in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+			{
+				if (new FileInfo(f).Length > 0 && ++n >= 5)
+					return true;
+			}
+			return false;
+		}
+
+		/// <summary>Alias for full check — marker set is the required quickinstall baseline.</summary>
 		public static bool IsFullRequiredContentInstalled(string supportDir)
-			=> AllExist(supportDir, RequiredBaseFiles) && AllExist(supportDir, RequiredExpansionFiles);
+			=> IsBaseContentInstalled(supportDir);
 
 		public static string MissingSummary(string supportDir)
 		{
-			var missing = Missing(supportDir, RequiredBaseFiles)
-				.Concat(Missing(supportDir, RequiredExpansionFiles))
+			var missing = Mod.MarkerFiles
+				.Where(rel =>
+				{
+					var path = Path.Combine(supportDir, rel.Replace('/', Path.DirectorySeparatorChar));
+					return !File.Exists(path) || new FileInfo(path).Length == 0;
+				})
+				.Select(Path.GetFileName)
 				.ToArray();
-			return missing.Length == 0 ? "ok" : string.Join(", ", missing.Select(Path.GetFileName));
+			return missing.Length == 0 ? "ok" : string.Join(", ", missing);
 		}
 
 		public static void LogInventory(string supportDir)
 		{
 			try
 			{
-				var root = ContentRaV2(supportDir);
+				var root = ContentRoot(supportDir);
 				if (!Directory.Exists(root))
 				{
-					AndroidFileLog.Warn("OpenRA.Content", "No Content/ra/v2 at " + root);
+					AndroidFileLog.Warn("OpenRA.Content", "No content at " + root);
 					return;
 				}
 
-				var mixes = Directory.GetFiles(root, "*.mix", SearchOption.AllDirectories);
-				var auds = Directory.GetFiles(root, "*.aud", SearchOption.AllDirectories);
+				var files = Directory.GetFiles(root, "*", SearchOption.AllDirectories);
 				AndroidFileLog.Info("OpenRA.Content",
-					"Inventory mix=" + mixes.Length + " aud=" + auds.Length
-					+ " fullRequired=" + IsFullRequiredContentInstalled(supportDir)
+					"mod=" + Mod.Id + " files=" + files.Length
+					+ " installed=" + IsBaseContentInstalled(supportDir)
 					+ " missing=" + MissingSummary(supportDir));
 			}
 			catch (Exception e)
 			{
 				AndroidFileLog.Warn("OpenRA.Content", "LogInventory: " + e.Message);
-			}
-		}
-
-		static bool AllExist(string supportDir, IEnumerable<string> rels)
-		{
-			if (string.IsNullOrEmpty(supportDir))
-				return false;
-			return rels.All(rel =>
-			{
-				var path = Path.Combine(supportDir, rel.Replace('/', Path.DirectorySeparatorChar));
-				return File.Exists(path) && new FileInfo(path).Length > 0;
-			});
-		}
-
-		static IEnumerable<string> Missing(string supportDir, IEnumerable<string> rels)
-		{
-			foreach (var rel in rels)
-			{
-				var path = Path.Combine(supportDir, rel.Replace('/', Path.DirectorySeparatorChar));
-				if (!File.Exists(path) || new FileInfo(path).Length == 0)
-					yield return rel;
 			}
 		}
 	}

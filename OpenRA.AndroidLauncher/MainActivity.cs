@@ -16,7 +16,6 @@ using AEnv = global::Android.OS.Environment;
 namespace OpenRA.Android
 {
 	[Activity(
-		Label = "OpenRA",
 		MainLauncher = true,
 		ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden,
 		ScreenOrientation = ScreenOrientation.SensorLandscape,
@@ -230,11 +229,12 @@ namespace OpenRA.Android
 
 		void OnAdvancedInstall()
 		{
-			var path = ContentProbe.ContentRaV2(ContentBootstrap.SupportDir);
+			var mod = ModInfo.Current;
+			var path = ContentProbe.ContentRoot(ContentBootstrap.SupportDir);
+			var markers = string.Join(", ", mod.MarkerFiles.Select(System.IO.Path.GetFileName));
 			var msg =
-				"Copy original RA files into:\n" + path + "\n\n" +
-				"Required: allies.mix, conquer.mix, interior.mix, hires.mix, lores.mix, " +
-				"local.mix, speech.mix, russian.mix, snow.mix, sounds.mix, temperat.mix\n\n" +
+				"Copy original " + mod.DisplayName + " files into:\n" + path + "\n\n" +
+				"Markers: " + markers + "\n\n" +
 				"Then restart the app or tap check again.";
 			new AlertDialog.Builder(this)
 				.SetTitle("Advanced Install")
@@ -290,7 +290,7 @@ namespace OpenRA.Android
 				// Load native libs here (not OnCreate)
 				OpenRA.Platforms.Android.AndroidNativeBootstrap.Init();
 				OpenRA.Platforms.Android.AndroidEgl.ReleaseCurrent();
-				EngineBootstrap.Start(surfaceView, "ra");
+				EngineBootstrap.Start(surfaceView, BuildConfig.ModId);
 
 				// Engine owns the GL surface — drop the opaque status strip so it
 				// cannot cover rendered frames (was full-screen black with only text).

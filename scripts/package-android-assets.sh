@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "${1:-.}" && pwd)"
 OUT="${2:-$ROOT/OpenRA.AndroidLauncher/Assets}"
 CONFIG="${3:-Release}"
+OPENRA_MOD="${4:-${OPENRA_MOD:-ra}}"
 OPENRA_BIN="${OPENRA_BIN:-}"
 
 cd "$ROOT"
@@ -15,6 +16,7 @@ echo "=== Package Android assets ==="
 echo "ROOT=$ROOT"
 echo "OUT=$OUT"
 echo "CONFIG=$CONFIG"
+echo "OPENRA_MOD=$OPENRA_MOD"
 
 # --- engine root files (official install_data list) ---
 for f in VERSION AUTHORS COPYING "global mix database.dat"; do
@@ -40,7 +42,12 @@ fi
 
 # --- full mod trees (rules YAML must match built assemblies) ---
 MISSING_MOD=0
-for mod in common common-content ra ra-content; do
+# Shared packages always; primary mod + optional *-content companion.
+MOD_LIST="common common-content ${OPENRA_MOD}"
+case "$OPENRA_MOD" in
+  ra|cnc|d2k|ts) MOD_LIST="$MOD_LIST ${OPENRA_MOD}-content" ;;
+esac
+for mod in $MOD_LIST; do
   if [[ -d "$ROOT/mods/$mod" ]]; then
     rm -rf "$OUT/mods/$mod"
     cp -a "$ROOT/mods/$mod" "$OUT/mods/"
@@ -50,7 +57,7 @@ for mod in common common-content ra ra-content; do
   else
     echo "WARNING: mods/$mod not found"
     # ra + common are required for Red Alert
-    if [[ "$mod" == "ra" ]]; then
+    if [[ "$mod" == "$OPENRA_MOD" ]]; then
       MISSING_MOD=1
     fi
     if [[ "$mod" == "common" ]]; then
@@ -61,7 +68,7 @@ for mod in common common-content ra ra-content; do
 done
 
 if [[ "$MISSING_MOD" -ne 0 ]]; then
-  echo "ERROR: required mods missing (ra and/or common)"
+  echo "ERROR: required mods missing (${OPENRA_MOD} and/or common)"
   exit 1
 fi
 
@@ -176,9 +183,11 @@ require_file() {
 }
 
 # ra is a full mod; common/common-content are shared packages (no mod.yaml upstream)
-require_file "$OUT/mods/ra/mod.yaml"
-require_file "$OUT/mods/ra/rules/vehicles.yaml"
-require_file "$OUT/mods/ra/rules/defaults.yaml"
+require_file "$OUT/mods/${OPENRA_MOD}/mod.yaml"
+if [[ "$OPENRA_MOD" == "ra" ]]; then
+  require_file "$OUT/mods/ra/rules/vehicles.yaml"
+  require_file "$OUT/mods/ra/rules/defaults.yaml"
+fi
 require_file "$OUT/assemblies/OpenRA.Mods.Common.dll"
 require_file "$OUT/assemblies/OpenRA.Mods.Cnc.dll"
 
@@ -208,6 +217,7 @@ else
 fi
 
 # V2RL must define Mobile in the packaged YAML (upstream does)
+if [[ "$OPENRA_MOD" == "ra" ]]; then
 if [[ -f "$OUT/mods/ra/rules/vehicles.yaml" ]]; then
   if grep -q '^V2RL:' "$OUT/mods/ra/rules/vehicles.yaml" || grep -q $'\tV2RL:' "$OUT/mods/ra/rules/vehicles.yaml" || grep -q 'V2RL:' "$OUT/mods/ra/rules/vehicles.yaml"; then
     # Extract a window around V2RL and require Mobile:
@@ -237,6 +247,7 @@ if [[ -f "$OUT/mods/ra/rules/defaults.yaml" ]]; then
     echo "  WARNING: defaults.yaml may be incomplete (^Vehicle/Mobile)"
   fi
 fi
+fi  # OPENRA_MOD == ra
 
 # Assemblies: Common must be non-trivial size
 if [[ -f "$OUT/assemblies/OpenRA.Mods.Common.dll" ]]; then

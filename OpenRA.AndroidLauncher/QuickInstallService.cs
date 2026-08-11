@@ -1,4 +1,4 @@
-// Quick Install: download OpenRA RA freeware package and extract to Content/ra/v2.
+// Quick Install: download OpenRA freeware package for the built mod and extract to Content/.
 
 using System;
 using System.IO;
@@ -12,9 +12,6 @@ namespace OpenRA.Android
 {
 	public static class QuickInstallService
 	{
-		public const string MirrorListUrl = "https://www.openra.net/packages/ra-quickinstall-mirrors.txt";
-		public const string ExpectedSha1 = "44241f68e69db9511db82cf83c174737ccda300b";
-
 		public sealed class Progress
 		{
 			public string Status { get; set; }
@@ -29,18 +26,19 @@ namespace OpenRA.Android
 			IProgress<Progress> progress,
 			CancellationToken ct)
 		{
+			var mod = ModInfo.Current;
 			Directory.CreateDirectory(supportDir);
-			var contentRoot = ContentProbe.ContentRaV2(supportDir);
+			var contentRoot = ContentProbe.ContentRoot(supportDir);
 			Directory.CreateDirectory(contentRoot);
 
 			progress?.Report(new Progress { Status = "Fetching mirror list…" });
-			var mirrors = await FetchMirrorsAsync(ct).ConfigureAwait(false);
+			var mirrors = await FetchMirrorsAsync(mod.MirrorListUrl, ct).ConfigureAwait(false);
 			if (mirrors.Length == 0)
-				throw new InvalidOperationException("No content mirrors available.");
+				throw new InvalidOperationException("No content mirrors available for " + mod.DisplayName + ".");
 
 			var cacheDir = Path.Combine(supportDir, "Cache");
 			Directory.CreateDirectory(cacheDir);
-			var zipPath = Path.Combine(cacheDir, "ra-quickinstall.zip");
+			var zipPath = Path.Combine(cacheDir, mod.Id + "-quickinstall.zip");
 
 			Exception last = null;
 			foreach (var url in mirrors)
@@ -69,7 +67,7 @@ namespace OpenRA.Android
 			if (!ContentProbe.IsBaseContentInstalled(supportDir))
 			{
 				throw new InvalidOperationException(
-					"Extract finished but required MIX files are still missing: "
+					"Extract finished but required files are still missing: "
 					+ ContentProbe.MissingSummary(supportDir));
 			}
 
@@ -77,10 +75,10 @@ namespace OpenRA.Android
 			AndroidFileLog.Info("OpenRA.Install", "Quick Install complete → " + contentRoot);
 		}
 
-		static async Task<string[]> FetchMirrorsAsync(CancellationToken ct)
+		static async Task<string[]> FetchMirrorsAsync(string mirrorListUrl, CancellationToken ct)
 		{
 			using var http = CreateHttp();
-			var text = await http.GetStringAsync(MirrorListUrl, ct).ConfigureAwait(false);
+			var text = await http.GetStringAsync(mirrorListUrl, ct).ConfigureAwait(false);
 			return text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
 				.Select(l => l.Trim())
 				.Where(l => l.StartsWith("http", StringComparison.OrdinalIgnoreCase))
@@ -115,7 +113,7 @@ namespace OpenRA.Android
 			}
 		}
 
-		static void ExtractZip(string zipPath, string contentRaV2, IProgress<Progress> progress, CancellationToken ct)
+		static void ExtractZip(string zipPath, string contentRoot, IProgress<Progress> progress, CancellationToken ct)
 		{
 			using var zip = ZipFile.OpenRead(zipPath);
 			var entries = zip.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToArray();
@@ -123,31 +121,23 @@ namespace OpenRA.Android
 			foreach (var entry in entries)
 			{
 				ct.ThrowIfCancellationRequested();
-				i++;
-				// Zip layout matches downloads.yaml source names (e.g. allies.mix, expand/...)
-				var rel = entry.FullName.Replace('\\', '/');
-				if (rel.Contains("..", StringComparison.Ordinal))
-					continue;
-
-				var dest = Path.Combine(contentRaV2, rel.Replace('/', Path.DirectorySeparatorChar));
+				var dest = Path.Combine(contentRoot, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
 				var dir = Path.GetDirectoryName(dest);
 				if (!string.IsNullOrEmpty(dir))
 					Directory.CreateDirectory(dir);
-
+				if (entry.FullName.EndsWith("/") || entry.FullName.EndsWith("\\"))
+					continue;
 				entry.ExtractToFile(dest, overwrite: true);
-				progress?.Report(new Progress
-				{
-					Status = $"Extracting… {i}/{entries.Length}",
-					BytesReceived = i,
-					TotalBytes = entries.Length
-				});
+				i++;
+				if (i % 25 == 0)
+					progress?.Report(new Progress { Status = $"Extracting… {i}/{entries.Length}" });
 			}
 		}
 
 		static HttpClient CreateHttp()
 		{
 			var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
-			http.DefaultRequestHeaders.UserAgent.ParseAdd("OpenRA-Android/0.1");
+			http.DefaultRequestHeaders.UserAgent.ParseAdd("OpenRA-Android/" + BuildConfig.ModId);
 			return http;
 		}
 	}

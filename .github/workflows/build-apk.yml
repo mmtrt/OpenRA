@@ -65,11 +65,23 @@ env:
 
 jobs:
   build-apk:
-    name: Build APK (arm64-v8a)
+    name: ${{ matrix.appimage }} (arm64)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: write   # required to create/update releases
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mod: ra
+            appimage: OpenRA-Red-Alert
+          - mod: cnc
+            appimage: OpenRA-Tiberian-Dawn
+          - mod: d2k
+            appimage: OpenRA-Dune-2000
+          - mod: ts
+            appimage: OpenRA-Tiberian-Sun
 
     steps:
       - name: Checkout
@@ -460,15 +472,15 @@ jobs:
           # Package FULL mod trees + assemblies from the same tree that built the DLLs.
           # Fixes ruleset errors like: v2rl Chronoshiftable requires Mobile or Husk
           # (caused by incomplete YAML or DLL/YAML version skew).
-          ./scripts/package-android-assets.sh \
+          OPENRA_MOD="${{ matrix.mod }}" ./scripts/package-android-assets.sh \
             "${{ github.workspace }}" \
             "OpenRA.AndroidLauncher/Assets" \
             "$CONFIG"
 
           # Extra guard: rules files required for RA ruleset validation
           ASSETS="OpenRA.AndroidLauncher/Assets"
-          test -f "$ASSETS/mods/ra/rules/vehicles.yaml"
-          test -f "$ASSETS/mods/ra/rules/defaults.yaml"
+          test -d "$ASSETS/mods/${{ matrix.mod }}"
+          test -f "$ASSETS/mods/${{ matrix.mod }}/mod.yaml"
           # mods/common is a shared package (no mod.yaml on bleed) — require dir + font
           test -d "$ASSETS/mods/common"
           test -f "$ASSETS/mods/common/FreeSans.ttf" || test -f "$ASSETS/mods/common/FreeSansBold.ttf"
@@ -485,6 +497,7 @@ jobs:
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
             /p:OpenRAAndroid=true \
+            -p:OpenRAMod=${{ matrix.mod }} \
             -p:RuntimeIdentifier=${{ env.RID }} \
             --verbosity minimal
 
@@ -494,10 +507,14 @@ jobs:
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
           OUT_DIR="${{ github.workspace }}/artifacts-apk"
           mkdir -p "$OUT_DIR"
+          # Clean prior mod APK outputs so collect picks the right package id
+          rm -rf "$OUT_DIR"
+          mkdir -p "$OUT_DIR"
           dotnet publish "${LAUNCHER_CSPROJ}" \
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
             /p:OpenRAAndroid=true \
+            -p:OpenRAMod=${{ matrix.mod }} \
             -p:RuntimeIdentifier=${{ env.RID }} \
             -p:AndroidPackageFormat=apk \
             -p:PublishTrimmed=false \
@@ -520,7 +537,7 @@ jobs:
             exit 1
           fi
           SHORT_SHA="${GITHUB_SHA::7}"
-          DEST="${{ github.workspace }}/OpenRA-android-arm64-${SHORT_SHA}.apk"
+          DEST="${{ github.workspace }}/${{ matrix.appimage }}-android-arm64-${SHORT_SHA}.apk"
           cp "$APK" "$DEST"
           echo "apk_path=$DEST" >> "$GITHUB_OUTPUT"
           echo "Found APK: $DEST ($(du -h "$DEST" | cut -f1))"

@@ -3,9 +3,16 @@
     <TargetFramework>net10.0-android</TargetFramework>
     <OutputType>Exe</OutputType>
     <RootNamespace>OpenRA.Android</RootNamespace>
-    <ApplicationId>net.openra.android</ApplicationId>
+    <!-- OpenRAMod=ra|cnc|d2k|ts — one APK per mod (AppImage-style naming). -->
+    <OpenRAMod Condition="'$(OpenRAMod)' == ''">ra</OpenRAMod>
+    <ApplicationId>net.openra.android.$(OpenRAMod)</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.1.0-alpha</ApplicationDisplayVersion>
+    <ApplicationTitle Condition="'$(OpenRAMod)' == 'ra'">OpenRA Red Alert</ApplicationTitle>
+    <ApplicationTitle Condition="'$(OpenRAMod)' == 'cnc'">OpenRA Tiberian Dawn</ApplicationTitle>
+    <ApplicationTitle Condition="'$(OpenRAMod)' == 'd2k'">OpenRA Dune 2000</ApplicationTitle>
+    <ApplicationTitle Condition="'$(OpenRAMod)' == 'ts'">OpenRA Tiberian Sun</ApplicationTitle>
+    <ApplicationTitle Condition="'$(ApplicationTitle)' == ''">OpenRA</ApplicationTitle>
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
     <AndroidMinSdkVersion>26</AndroidMinSdkVersion>
@@ -13,6 +20,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>$(DefineConstants);OPENRA_MOD_$([System.String]::Copy('$(OpenRAMod)').ToUpperInvariant())</DefineConstants>
     <!-- CRITICAL: PublishTrimmed=true strips BCL methods OpenRA needs when loading MIX/rules
          via dynamically loaded OpenRA.Mods.*.dll (MissingMethodException:
          MemoryExtensions.ToUpperInvariant, Array.Copy(long), Enumerable.Max, …).
