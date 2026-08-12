@@ -370,10 +370,21 @@ namespace OpenRA
 			renderType = RenderType.None;
 		}
 
+		int loggedDrawBatches;
+
 		public void DrawBatch<T>(IVertexBuffer<T> vertices, IShader shader,
 			int firstVertex, int numVertices, PrimitiveType type)
 			where T : struct
 		{
+			if (loggedDrawBatches < 12)
+			{
+				loggedDrawBatches++;
+				Log.Write("graphics", "DrawBatch #" + loggedDrawBatches +
+					" shader=" + shader.GetType().Name +
+					" vertexType=" + typeof(T).Name +
+					" first=" + firstVertex + " n=" + numVertices + " type=" + type);
+			}
+
 			vertices.Bind();
 			shader.Bind();
 			Context.DrawPrimitives(type, firstVertex, numVertices);
