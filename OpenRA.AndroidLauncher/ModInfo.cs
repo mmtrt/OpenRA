@@ -17,7 +17,7 @@ namespace OpenRA.Android
 		public string ApplicationLabel { get; init; }    // OpenRA Red Alert
 		public string MirrorListUrl { get; init; }
 		/// <summary>Used when the official mirrors.txt is missing (404) or empty.</summary>
-		public string[] FallbackPackageUrls { get; init; } = System.Array.Empty<string>();
+		public string[] FallbackPackageUrls { get; init; } = Array.Empty<string>();
 		public string ContentRelativeDir { get; init; }  // Content/ra/v2
 		public string[] MarkerFiles { get; init; }       // relative to SupportDir
 		public int ThemePrimary { get; init; }           // ARGB card accent
@@ -65,15 +65,12 @@ namespace OpenRA.Android
 			ThemeTitle = unchecked((int)0xFFE8D8A8),
 			ThemeBody = unchecked((int)0xFFC8C0A8),
 			InstallBlurb =
-				"Red Alert requires artwork and audio from the original game.
-
-" +
+				"Red Alert requires artwork and audio from the original game.\n\n" +
 				"Quick Install will automatically download this content (without music " +
-				"or videos) from a mirror of the 2008 Red Alert freeware release.
-
-" +
+				"or videos) from a mirror of the 2008 Red Alert freeware release.\n\n" +
 				"Advanced Install includes options for copying the music, videos, and " +
-				"other content from an original game disc or digital installation.";
+				"other content from an original game disc or digital installation."
+		};
 
 		public static readonly ModInfo Cnc = new()
 		{
@@ -102,15 +99,12 @@ namespace OpenRA.Android
 			ThemeTitle = unchecked((int)0xFFD8E8A8),
 			ThemeBody = unchecked((int)0xFFB8C8A0),
 			InstallBlurb =
-				"Tiberian Dawn requires artwork and audio from the original game.
-
-" +
+				"Tiberian Dawn requires artwork and audio from the original game.\n\n" +
 				"Quick Install will automatically download this content (without music " +
-				"or videos) from a mirror of the 2007 C&C Gold freeware release.
-
-" +
+				"or videos) from a mirror of the 2007 C&C Gold freeware release.\n\n" +
 				"Advanced Install includes options for copying the music, videos, and " +
-				"other content from an original game disc or digital installation.";
+				"other content from an original game disc or digital installation."
+		};
 
 		public static readonly ModInfo D2k = new()
 		{
@@ -139,15 +133,12 @@ namespace OpenRA.Android
 			ThemeTitle = unchecked((int)0xFFE8D8A0),
 			ThemeBody = unchecked((int)0xFFC8B890),
 			InstallBlurb =
-				"Dune 2000 requires artwork and audio from the original game.
-
-" +
+				"Dune 2000 requires artwork and audio from the original game.\n\n" +
 				"Quick Install will automatically download this content (without music " +
-				"or videos) from an online mirror of the game files.
-
-" +
+				"or videos) from an online mirror of the game files.\n\n" +
 				"Advanced Install includes options for copying the music, videos, and " +
-				"other content from an original game disc.";
+				"other content from an original game disc."
+		};
 
 		public static readonly ModInfo Ts = new()
 		{
