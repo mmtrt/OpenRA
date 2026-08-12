@@ -140,13 +140,20 @@ else
   echo "WARNING: could not locate Mods.Common output"
 fi
 
-for proj in OpenRA.Mods.Cnc; do
+# Common + Cnc always; D2k when packaging d2k.
+MOD_PROJS="OpenRA.Mods.Common OpenRA.Mods.Cnc"
+case "$OPENRA_MOD" in
+  d2k) MOD_PROJS="$MOD_PROJS OpenRA.Mods.D2k" ;;
+esac
+for proj in $MOD_PROJS; do
   if out=$(find_mod_out "$proj"); then
     while IFS= read -r f; do
       case "$(basename "$f")" in
         OpenRA.Mods.*.dll) copy_dll "$f" ;;
       esac
     done < <(find "$out" -maxdepth 1 -name 'OpenRA.Mods.*.dll' -type f)
+  else
+    echo "WARNING: no output dir for $proj"
   fi
 done
 
@@ -157,7 +164,7 @@ for dep in \
   ICSharpCode.SharpZipLib.dll Mono.Nat.dll Newtonsoft.Json.dll \
   Linguini.Bundle.dll Linguini.Shared.dll Linguini.Syntax.dll \
   Microsoft.Extensions.DependencyModel.dll Eluant.dll \
-  OpenRA.Mods.Common.dll OpenRA.Mods.Cnc.dll
+  OpenRA.Mods.Common.dll OpenRA.Mods.Cnc.dll OpenRA.Mods.D2k.dll
 do
   if [[ ! -f "$OUT/assemblies/$dep" ]]; then
     found=$(find "$ROOT" -path '*/OpenRA.AndroidLauncher/*' -prune -o -name "$dep" -print 2>/dev/null | head -1 || true)
@@ -190,6 +197,9 @@ if [[ "$OPENRA_MOD" == "ra" ]]; then
 fi
 require_file "$OUT/assemblies/OpenRA.Mods.Common.dll"
 require_file "$OUT/assemblies/OpenRA.Mods.Cnc.dll"
+if [[ "$OPENRA_MOD" == "d2k" ]]; then
+  require_file "$OUT/assemblies/OpenRA.Mods.D2k.dll"
+fi
 
 # Shared package dirs (OpenRA bleed: common has fonts/chrome/scripts — no mod.yaml)
 if [[ ! -d "$OUT/mods/common" ]]; then

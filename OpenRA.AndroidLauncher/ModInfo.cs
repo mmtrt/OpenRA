@@ -47,6 +47,12 @@ namespace OpenRA.Android
 			AppImageName = "OpenRA-Red-Alert",
 			ApplicationLabel = "OpenRA Red Alert",
 			MirrorListUrl = "https://www.openra.net/packages/ra-quickinstall-mirrors.txt",
+			FallbackPackageUrls = new[]
+			{
+				"https://cdn.mailaender.name/openra/ra-quickinstall.zip",
+				"https://republic.community/hosted/files/command-and-conquer/openra/ra-quickinstall.zip",
+				"https://openra.0x47.net/ra-quickinstall.zip",
+			},
 			ContentRelativeDir = "Content/ra/v2",
 			MarkerFiles = new[]
 			{
@@ -59,10 +65,15 @@ namespace OpenRA.Android
 			ThemeTitle = unchecked((int)0xFFE8D8A8),
 			ThemeBody = unchecked((int)0xFFC8C0A8),
 			InstallBlurb =
-				"Red Alert requires artwork and audio from the original game.\n\n" +
-				"Quick Install downloads the 2008 Red Alert freeware content pack " +
-				"(without music or videos) from official OpenRA mirrors."
-		};
+				"Red Alert requires artwork and audio from the original game.
+
+" +
+				"Quick Install will automatically download this content (without music " +
+				"or videos) from a mirror of the 2008 Red Alert freeware release.
+
+" +
+				"Advanced Install includes options for copying the music, videos, and " +
+				"other content from an original game disc or digital installation.";
 
 		public static readonly ModInfo Cnc = new()
 		{
@@ -70,28 +81,36 @@ namespace OpenRA.Android
 			DisplayName = "Tiberian Dawn",
 			AppImageName = "OpenRA-Tiberian-Dawn",
 			ApplicationLabel = "OpenRA Tiberian Dawn",
-			// Official cnc-quickinstall-mirrors.txt currently 404s — use cnc-packages.zip fallbacks.
-			MirrorListUrl = "https://www.openra.net/packages/cnc-quickinstall-mirrors.txt",
+			// Official: mods/cnc-content/installer/downloads.yaml → cnc-mirrors.txt / cnc-packages.zip
+			MirrorListUrl = "https://www.openra.net/packages/cnc-mirrors.txt",
 			FallbackPackageUrls = new[]
 			{
 				"https://cdn.mailaender.name/openra/cnc-packages.zip",
 				"https://republic.community/hosted/files/command-and-conquer/openra/cnc-packages.zip",
 				"https://openra.0x47.net/cnc-packages.zip",
+				"https://openra.ppmsite.com/cnc-packages.zip",
 			},
 			ContentRelativeDir = "Content/cnc",
 			MarkerFiles = new[]
 			{
-				"Content/cnc/speech.mix", "Content/cnc/sounds.mix", "Content/cnc/temperat.mix",
-				"Content/cnc/winter.mix", "Content/cnc/desert.mix", "Content/cnc/conquer.mix",
+				"Content/cnc/conquer.mix", "Content/cnc/desert.mix", "Content/cnc/general.mix",
+				"Content/cnc/sounds.mix", "Content/cnc/speech.mix", "Content/cnc/temperat.mix",
+				"Content/cnc/tempicnh.mix", "Content/cnc/transit.mix", "Content/cnc/winter.mix",
 			},
 			ThemePrimary = unchecked((int)0xFF3D7A28),
 			ThemeBackground = unchecked((int)0xDC121A10),
 			ThemeTitle = unchecked((int)0xFFD8E8A8),
 			ThemeBody = unchecked((int)0xFFB8C8A0),
 			InstallBlurb =
-				"Tiberian Dawn requires artwork and audio from the original game.\n\n" +
-				"Quick Install downloads the freeware content pack from official OpenRA mirrors."
-		};
+				"Tiberian Dawn requires artwork and audio from the original game.
+
+" +
+				"Quick Install will automatically download this content (without music " +
+				"or videos) from a mirror of the 2007 C&C Gold freeware release.
+
+" +
+				"Advanced Install includes options for copying the music, videos, and " +
+				"other content from an original game disc or digital installation.";
 
 		public static readonly ModInfo D2k = new()
 		{
@@ -99,27 +118,36 @@ namespace OpenRA.Android
 			DisplayName = "Dune 2000",
 			AppImageName = "OpenRA-Dune-2000",
 			ApplicationLabel = "OpenRA Dune 2000",
-			MirrorListUrl = "https://www.openra.net/packages/d2k-quickinstall-mirrors.txt",
+			// Official: d2k-quickinstall-v3 → Content/d2k/v3/*.R16 (not legacy v2/R8)
+			MirrorListUrl = "https://www.openra.net/packages/d2k-quickinstall-v3-mirrors.txt",
 			FallbackPackageUrls = new[]
 			{
-				"https://cdn.mailaender.name/openra/d2k-quickinstall.zip",
-				"https://republic.community/hosted/files/command-and-conquer/openra/d2k-quickinstall.zip",
-				"https://openra.0x47.net/d2k-quickinstall.zip",
+				"https://cdn.mailaender.name/openra/d2k-quickinstall-v3.zip",
+				"https://openra.ppmsite.com/d2k-quickinstall-v3.zip",
+				"https://openra.0x47.net/d2k-quickinstall-v3.zip",
+				"https://openra.baxxster.no/openra/d2k-v3/d2k-quickinstall-v3.zip",
 			},
-			// Zip root is v2/… — extract into Content/d2k so paths become Content/d2k/v2/…
+			// Zip root is v3/… — extract into Content/d2k → Content/d2k/v3/…
 			ContentRelativeDir = "Content/d2k",
 			MarkerFiles = new[]
 			{
-				"Content/d2k/v2/DATA.R8", "Content/d2k/v2/BLOXBASE.R8",
+				"Content/d2k/v3/DATA.R16", "Content/d2k/v3/BLOXBASE.R16",
+				"Content/d2k/v3/MOUSE.R16", "Content/d2k/v3/PALETTE.BIN",
 			},
 			ThemePrimary = unchecked((int)0xFFB08830),
 			ThemeBackground = unchecked((int)0xDC1C1810),
 			ThemeTitle = unchecked((int)0xFFE8D8A0),
 			ThemeBody = unchecked((int)0xFFC8B890),
 			InstallBlurb =
-				"Dune 2000 requires artwork and audio from the original game.\n\n" +
-				"Quick Install downloads the freeware content pack from official OpenRA mirrors."
-		};
+				"Dune 2000 requires artwork and audio from the original game.
+
+" +
+				"Quick Install will automatically download this content (without music " +
+				"or videos) from an online mirror of the game files.
+
+" +
+				"Advanced Install includes options for copying the music, videos, and " +
+				"other content from an original game disc.";
 
 		public static readonly ModInfo Ts = new()
 		{

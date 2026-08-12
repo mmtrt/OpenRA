@@ -32,8 +32,15 @@ namespace OpenRA.Android
 			Directory.CreateDirectory(contentRoot);
 
 			progress?.Report(new Progress { Status = "Fetching mirror list…" });
-			var mirrors = await FetchMirrorsAsync(mod.MirrorListUrl, ct).ConfigureAwait(false);
-			if (mirrors.Length == 0)
+			var mirrors = (await FetchMirrorsAsync(mod.MirrorListUrl, ct).ConfigureAwait(false)).ToList();
+			// Always append hardcoded fallbacks (official cnc-quickinstall-mirrors.txt is 404 HTML).
+			if (mod.FallbackPackageUrls is { Length: > 0 })
+			{
+				foreach (var u in mod.FallbackPackageUrls)
+					if (!mirrors.Contains(u, StringComparer.OrdinalIgnoreCase))
+						mirrors.Add(u);
+			}
+			if (mirrors.Count == 0)
 				throw new InvalidOperationException("No content mirrors available for " + mod.DisplayName + ".");
 
 			var cacheDir = Path.Combine(supportDir, "Cache");
@@ -77,12 +84,35 @@ namespace OpenRA.Android
 
 		static async Task<string[]> FetchMirrorsAsync(string mirrorListUrl, CancellationToken ct)
 		{
-			using var http = CreateHttp();
-			var text = await http.GetStringAsync(mirrorListUrl, ct).ConfigureAwait(false);
-			return text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-				.Select(l => l.Trim())
-				.Where(l => l.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-				.ToArray();
+			try
+			{
+				using var http = CreateHttp();
+				using var resp = await http.GetAsync(mirrorListUrl, ct).ConfigureAwait(false);
+				if (!resp.IsSuccessStatusCode)
+				{
+					AndroidFileLog.Warn("OpenRA.Install",
+						"Mirror list HTTP " + (int)resp.StatusCode + " " + mirrorListUrl);
+					return Array.Empty<string>();
+				}
+
+				var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+				if (text.IndexOf("<html", StringComparison.OrdinalIgnoreCase) >= 0
+				    || text.IndexOf("<!DOCTYPE", StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					AndroidFileLog.Warn("OpenRA.Install", "Mirror list returned HTML (not a mirror file)");
+					return Array.Empty<string>();
+				}
+
+				return text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+					.Select(l => l.Trim())
+					.Where(l => l.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+					.ToArray();
+			}
+			catch (Exception e) when (e is not OperationCanceledException)
+			{
+				AndroidFileLog.Warn("OpenRA.Install", "Mirror list fetch failed: " + e.Message);
+				return Array.Empty<string>();
+			}
 		}
 
 		static async Task DownloadAsync(string url, string destPath, IProgress<Progress> progress, CancellationToken ct)
@@ -92,6 +122,9 @@ namespace OpenRA.Android
 				.ConfigureAwait(false);
 			resp.EnsureSuccessStatusCode();
 			var total = resp.Content.Headers.ContentLength;
+			var ctype = resp.Content.Headers.ContentType?.MediaType ?? "";
+			if (ctype.Contains("html", StringComparison.OrdinalIgnoreCase))
+				throw new InvalidOperationException("Mirror returned HTML instead of a zip: " + url);
 
 			await using var input = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
 			await using var output = File.Create(destPath);
@@ -111,6 +144,9 @@ namespace OpenRA.Android
 					TotalBytes = total
 				});
 			}
+
+			if (readTotal < 1024)
+				throw new InvalidOperationException("Downloaded file too small (" + readTotal + " bytes): " + url);
 		}
 
 		static void ExtractZip(string zipPath, string contentRoot, IProgress<Progress> progress, CancellationToken ct)

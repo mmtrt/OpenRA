@@ -70,29 +70,39 @@
     <TrimmerRootAssembly Include="System.Collections" RootMode="All" />
   </ItemGroup>
 
-  <!-- Per-mod app name + launcher icons (mods/*/icon-3x.png → mipmaps). -->
+    <!-- Per-mod app name + launcher icons. strings.xml is REWRITTEN each build from OpenRAMod. -->
   <Target Name="ApplyModBranding" BeforeTargets="PrepareForBuild;_GenerateAndroidAssets">
     <PropertyGroup>
       <_Mod>$(OpenRAMod)</_Mod>
       <_Mod Condition="'$(_Mod)' == ''">ra</_Mod>
-      <_AppName Condition="'$(_Mod)' == 'ra'">OpenRA Red Alert</_AppName>
-      <_AppName Condition="'$(_Mod)' == 'cnc'">OpenRA Tiberian Dawn</_AppName>
-      <_AppName Condition="'$(_Mod)' == 'd2k'">OpenRA Dune 2000</_AppName>
-      <_AppName Condition="'$(_Mod)' == 'ts'">OpenRA Tiberian Sun</_AppName>
+      <!-- Prefer ApplicationTitle already set from OpenRAMod in the main PropertyGroup -->
+      <_AppName>$(ApplicationTitle)</_AppName>
+      <_AppName Condition="'$(_AppName)' == '' And '$(_Mod)' == 'ra'">OpenRA Red Alert</_AppName>
+      <_AppName Condition="'$(_AppName)' == '' And '$(_Mod)' == 'cnc'">OpenRA Tiberian Dawn</_AppName>
+      <_AppName Condition="'$(_AppName)' == '' And '$(_Mod)' == 'd2k'">OpenRA Dune 2000</_AppName>
+      <_AppName Condition="'$(_AppName)' == '' And '$(_Mod)' == 'ts'">OpenRA Tiberian Sun</_AppName>
       <_AppName Condition="'$(_AppName)' == ''">OpenRA</_AppName>
       <_IconSrc>$(MSBuildThisFileDirectory)Resources\mod-icons\$(_Mod)</_IconSrc>
+      <_StringsFile>$(MSBuildThisFileDirectory)Resources\values\strings.xml</_StringsFile>
+      <_FgFile>$(MSBuildThisFileDirectory)Resources\drawable\ic_launcher_foreground.xml</_FgFile>
     </PropertyGroup>
-    <Message Importance="high" Text="ApplyModBranding: mod=$(_Mod) name=$(_AppName)" />
-    <WriteLinesToFile
-        File="$(MSBuildThisFileDirectory)Resources\values\strings.xml"
-        Lines="&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;%0A&lt;resources&gt;%0A    &lt;string name=&quot;app_name&quot;&gt;$(_AppName)&lt;/string&gt;%0A&lt;/resources&gt;"
-        Overwrite="true"
-        Encoding="UTF-8" />
-    <WriteLinesToFile
-        File="$(MSBuildThisFileDirectory)Resources\drawable\ic_launcher_foreground.xml"
-        Lines="&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;%0A&lt;inset xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;%0A    android:drawable=&quot;@drawable/icon_$(_Mod)&quot;%0A    android:insetLeft=&quot;18%&quot;%0A    android:insetTop=&quot;18%&quot;%0A    android:insetRight=&quot;18%&quot;%0A    android:insetBottom=&quot;18%&quot; /&gt;"
-        Overwrite="true"
-        Encoding="UTF-8" />
+    <Message Importance="high" Text="ApplyModBranding: mod=$(_Mod) app_name=$(_AppName)" />
+    <!-- WriteLinesToFile: one logical line with newlines via &#xA; is unreliable; use item list -->
+    <ItemGroup>
+      <_StringsLines Include="&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;" />
+      <_StringsLines Include="&lt;resources&gt;" />
+      <_StringsLines Include="    &lt;string name=&quot;app_name&quot;&gt;$(_AppName)&lt;/string&gt;" />
+      <_StringsLines Include="&lt;/resources&gt;" />
+      <_FgLines Include="&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;" />
+      <_FgLines Include="&lt;inset xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;" />
+      <_FgLines Include="    android:drawable=&quot;@drawable/icon_$(_Mod)&quot;" />
+      <_FgLines Include="    android:insetLeft=&quot;18%&quot;" />
+      <_FgLines Include="    android:insetTop=&quot;18%&quot;" />
+      <_FgLines Include="    android:insetRight=&quot;18%&quot;" />
+      <_FgLines Include="    android:insetBottom=&quot;18%&quot; /&gt;" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_StringsFile)" Lines="@(_StringsLines)" Overwrite="true" Encoding="UTF-8" />
+    <WriteLinesToFile File="$(_FgFile)" Lines="@(_FgLines)" Overwrite="true" Encoding="UTF-8" />
     <Copy SourceFiles="$(_IconSrc)\mipmap-mdpi\appicon.png" DestinationFolder="$(MSBuildThisFileDirectory)Resources\mipmap-mdpi" SkipUnchangedFiles="false" Condition="Exists('$(_IconSrc)\mipmap-mdpi\appicon.png')" />
     <Copy SourceFiles="$(_IconSrc)\mipmap-hdpi\appicon.png" DestinationFolder="$(MSBuildThisFileDirectory)Resources\mipmap-hdpi" SkipUnchangedFiles="false" Condition="Exists('$(_IconSrc)\mipmap-hdpi\appicon.png')" />
     <Copy SourceFiles="$(_IconSrc)\mipmap-xhdpi\appicon.png" DestinationFolder="$(MSBuildThisFileDirectory)Resources\mipmap-xhdpi" SkipUnchangedFiles="false" Condition="Exists('$(_IconSrc)\mipmap-xhdpi\appicon.png')" />

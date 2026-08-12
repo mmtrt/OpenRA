@@ -16,6 +16,7 @@ using AEnv = global::Android.OS.Environment;
 namespace OpenRA.Android
 {
 	[Activity(
+		Label = "@string/app_name",
 		MainLauncher = true,
 		ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden,
 		ScreenOrientation = ScreenOrientation.SensorLandscape,
