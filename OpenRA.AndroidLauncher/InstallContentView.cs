@@ -98,7 +98,7 @@ namespace OpenRA.Android
 			var dlDivider = MakeDivider(context);
 
 			// Determinate bar — custom LayerDrawable so fill uses mod theme (not Material green).
-			progress = new ProgressBar(context, null, Android.Resource.Attribute.ProgressBarStyleHorizontal);
+			progress = new ProgressBar(context, null, global::Android.Resource.Attribute.ProgressBarStyleHorizontal);
 			progress.Indeterminate = false;
 			progress.Max = 1000;
 			progress.Progress = 0;
@@ -258,8 +258,8 @@ namespace OpenRA.Android
 			var clip = new ClipDrawable(fill, GravityFlags.Left, ClipDrawableOrientation.Horizontal);
 
 			var layers = new LayerDrawable(new Drawable[] { track, clip });
-			layers.SetId(0, Android.Resource.Id.Background);
-			layers.SetId(1, Android.Resource.Id.Progress);
+			layers.SetId(0, global::Android.Resource.Id.Background);
+			layers.SetId(1, global::Android.Resource.Id.Progress);
 			return layers;
 		}
 
