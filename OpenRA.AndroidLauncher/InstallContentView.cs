@@ -14,12 +14,10 @@ namespace OpenRA.Android
 	public sealed class InstallContentView : FrameLayout
 	{
 		readonly ModInfo mod;
-		readonly FrameLayout cardHost;
 		readonly LinearLayout choicePanel;
 		readonly LinearLayout downloadPanel;
 		readonly TextView status;
 		readonly TextView downloadStatus;
-		readonly TextView downloadTitle;
 		readonly ProgressBar progress;
 		readonly Button advanced;
 		readonly Button quick;
@@ -50,26 +48,8 @@ namespace OpenRA.Android
 			AddView(bg, new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
-			cardHost = new FrameLayout(context);
-			AddView(cardHost, new FrameLayout.LayoutParams(
-				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
-			{
-				Gravity = GravityFlags.Center,
-				LeftMargin = Dp(28),
-				RightMargin = Dp(28)
-			});
-
-			choicePanel = BuildChoicePanel(context);
-			downloadPanel = BuildDownloadPanel(context);
-			downloadPanel.Visibility = ViewStates.Gone;
-
-			cardHost.AddView(choicePanel, MatchWrap());
-			cardHost.AddView(downloadPanel, MatchWrap());
-		}
-
-		LinearLayout BuildChoicePanel(Context context)
-		{
-			var card = MakeCard(context);
+			// ----- Choice panel (Advanced / Quick / Quit) -----
+			choicePanel = MakeCard(context);
 			var title = MakeTitle(context, "Install Content");
 			var divider = MakeDivider(context);
 
@@ -97,7 +77,6 @@ namespace OpenRA.Android
 			advanced = MakeButton(context, "Advanced Install");
 			quick = MakeButton(context, "Quick Install");
 			quit = MakeButton(context, "Quit");
-
 			advanced.Click += (_, _) => AdvancedInstallClicked?.Invoke();
 			quick.Click += (_, _) => QuickInstallClicked?.Invoke();
 			quit.Click += (_, _) => QuitClicked?.Invoke();
@@ -106,31 +85,30 @@ namespace OpenRA.Android
 			buttons.AddView(quick, btnLp);
 			buttons.AddView(quit, btnLp);
 
-			card.AddView(title, MatchWrap());
-			card.AddView(divider, DividerLp());
-			card.AddView(body, MatchWrap());
-			card.AddView(status, new LinearLayout.LayoutParams(
+			choicePanel.AddView(title, MatchWrap());
+			choicePanel.AddView(divider, DividerLp());
+			choicePanel.AddView(body, MatchWrap());
+			choicePanel.AddView(status, new LinearLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(10) });
-			card.AddView(buttons, MatchWrap());
-			return card;
-		}
+			choicePanel.AddView(buttons, MatchWrap());
 
-		LinearLayout BuildDownloadPanel(Context context)
-		{
-			var card = MakeCard(context);
-			downloadTitle = MakeTitle(context, "Downloading Quick Install Package");
-			var divider = MakeDivider(context);
+			// ----- Download progress panel -----
+			downloadPanel = MakeCard(context);
+			var dlTitle = MakeTitle(context, "Downloading Quick Install Package");
+			var dlDivider = MakeDivider(context);
 
-			// Horizontal progress bar matching desktop installer look
-			progress = new ProgressBar(context, null, Android.Resource.Attribute.ProgressBarStyleHorizontal)
-			{
-				Max = 1000,
-				Indeterminate = false
-			};
+			// Horizontal determinate progress bar
+			var styleId = context.Resources.GetIdentifier("Widget.Material.ProgressBar.Horizontal", "style", "android");
+			if (styleId == 0)
+				styleId = context.Resources.GetIdentifier("Widget.ProgressBar.Horizontal", "style", "android");
+			progress = styleId != 0
+				? new ProgressBar(context, null, 0, styleId)
+				: new ProgressBar(context);
+			progress.Indeterminate = false;
+			progress.Max = 1000;
 			progress.Progress = 0;
 			try
 			{
-				// Tint progress with mod accent
 				progress.ProgressDrawable?.SetColorFilter(
 					new PorterDuffColorFilter(mod.PrimaryColor, PorterDuff.Mode.SrcIn));
 			}
@@ -153,13 +131,24 @@ namespace OpenRA.Android
 			cancelLp.TopMargin = Dp(12);
 			row.AddView(cancel, cancelLp);
 
-			card.AddView(downloadTitle, MatchWrap());
-			card.AddView(divider, DividerLp());
-			card.AddView(progress, new LinearLayout.LayoutParams(
+			downloadPanel.AddView(dlTitle, MatchWrap());
+			downloadPanel.AddView(dlDivider, DividerLp());
+			downloadPanel.AddView(progress, new LinearLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, Dp(12)) { TopMargin = Dp(8), BottomMargin = Dp(8) });
-			card.AddView(downloadStatus, MatchWrap());
-			card.AddView(row, MatchWrap());
-			return card;
+			downloadPanel.AddView(downloadStatus, MatchWrap());
+			downloadPanel.AddView(row, MatchWrap());
+			downloadPanel.Visibility = ViewStates.Gone;
+
+			var host = new FrameLayout(context);
+			host.AddView(choicePanel, MatchWrap());
+			host.AddView(downloadPanel, MatchWrap());
+			AddView(host, new FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
+			{
+				Gravity = GravityFlags.Center,
+				LeftMargin = Dp(28),
+				RightMargin = Dp(28)
+			});
 		}
 
 		LinearLayout MakeCard(Context context)
@@ -218,7 +207,6 @@ namespace OpenRA.Android
 			return b;
 		}
 
-		/// <summary>Switch to official-style download progress card.</summary>
 		public void ShowDownloadProgress()
 		{
 			choicePanel.Visibility = ViewStates.Gone;
@@ -229,7 +217,6 @@ namespace OpenRA.Android
 			cancel.Enabled = true;
 		}
 
-		/// <summary>Return to Advanced / Quick / Quit choice card.</summary>
 		public void ShowChoice(string message = null)
 		{
 			downloadPanel.Visibility = ViewStates.Gone;
@@ -258,9 +245,6 @@ namespace OpenRA.Android
 			}
 		}
 
-		/// <summary>
-		/// Official-style line: "Downloading from host X.XX / Y.YY MB (Z%)"
-		/// </summary>
 		public void SetProgress(string message, double fraction)
 		{
 			if (downloadPanel.Visibility != ViewStates.Visible)
