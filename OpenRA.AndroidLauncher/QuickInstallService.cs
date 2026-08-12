@@ -65,7 +65,9 @@ namespace OpenRA.Android
 				ct.ThrowIfCancellationRequested();
 				try
 				{
-					progress?.Report(new Progress { Status = "Downloading…\n" + url });
+					var host0 = "mirror";
+					try { host0 = new Uri(url).Host; } catch { /* ignore */ }
+					progress?.Report(new Progress { Status = "Connecting to " + host0 + "…", Host = host0 });
 					await DownloadAsync(url, zipPath, progress, ct).ConfigureAwait(false);
 					last = null;
 					break;

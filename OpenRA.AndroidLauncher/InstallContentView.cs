@@ -97,22 +97,12 @@ namespace OpenRA.Android
 			var dlTitle = MakeTitle(context, "Downloading Quick Install Package");
 			var dlDivider = MakeDivider(context);
 
-			// Horizontal determinate progress bar
-			var styleId = context.Resources.GetIdentifier("Widget.Material.ProgressBar.Horizontal", "style", "android");
-			if (styleId == 0)
-				styleId = context.Resources.GetIdentifier("Widget.ProgressBar.Horizontal", "style", "android");
-			progress = styleId != 0
-				? new ProgressBar(context, null, 0, styleId)
-				: new ProgressBar(context);
+			// Determinate bar — custom LayerDrawable so fill uses mod theme (not Material green).
+			progress = new ProgressBar(context, null, Android.Resource.Attribute.ProgressBarStyleHorizontal);
 			progress.Indeterminate = false;
 			progress.Max = 1000;
 			progress.Progress = 0;
-			try
-			{
-				progress.ProgressDrawable?.SetColorFilter(
-					new PorterDuffColorFilter(mod.PrimaryColor, PorterDuff.Mode.SrcIn));
-			}
-			catch { /* ignore */ }
+			progress.ProgressDrawable = BuildThemedProgressDrawable(mod);
 
 			downloadStatus = new TextView(context)
 			{
@@ -211,7 +201,7 @@ namespace OpenRA.Android
 		{
 			choicePanel.Visibility = ViewStates.Gone;
 			downloadPanel.Visibility = ViewStates.Visible;
-			progress.Indeterminate = true;
+			progress.Indeterminate = false;
 			progress.Progress = 0;
 			downloadStatus.Text = "Fetching mirror list…";
 			cancel.Enabled = true;
@@ -251,15 +241,26 @@ namespace OpenRA.Android
 				ShowDownloadProgress();
 
 			downloadStatus.Text = message ?? "";
-			if (fraction <= 0)
-			{
-				progress.Indeterminate = true;
-			}
-			else
-			{
-				progress.Indeterminate = false;
-				progress.Progress = (int)Math.Clamp(fraction * 1000, 0, 1000);
-			}
+			progress.Indeterminate = false;
+			progress.Progress = fraction <= 0 ? 0 : (int)Math.Clamp(fraction * 1000, 0, 1000);
+		}
+
+
+		static global::Android.Graphics.Drawables.Drawable BuildThemedProgressDrawable(ModInfo mod)
+		{
+			var track = new GradientDrawable();
+			track.SetColor(AColor.Argb(0x55, 0x20, 0x20, 0x18));
+			track.SetCornerRadius(4f);
+
+			var fill = new GradientDrawable();
+			fill.SetColor(mod.PrimaryColor);
+			fill.SetCornerRadius(4f);
+			var clip = new ClipDrawable(fill, GravityFlags.Left, ClipDrawableOrientation.Horizontal);
+
+			var layers = new LayerDrawable(new Drawable[] { track, clip });
+			layers.SetId(0, Android.Resource.Id.Background);
+			layers.SetId(1, Android.Resource.Id.Progress);
+			return layers;
 		}
 
 		int Dp(int value) =>
