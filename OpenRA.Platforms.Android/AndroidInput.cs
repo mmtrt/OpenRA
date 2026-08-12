@@ -77,6 +77,12 @@ namespace OpenRA.Platforms.Android
 		const float ThreeFingerZoomRatioOut = 1f / 1.15f;
 
 		readonly object queueLock = new();
+		// Reused drain buffers (PumpInput only foreach's within the same call).
+		MouseInput[] mouseDrainBuf = Array.Empty<MouseInput>();
+		float[] zoomDrainBuf = Array.Empty<float>();
+		int2[] panDrainBuf = Array.Empty<int2>();
+		(int2 loc, int2 delta)[] scrollDrainBuf = Array.Empty<(int2, int2)>();
+		KeyInput[] keyDrainBuf = Array.Empty<KeyInput>();
 		readonly Queue<MouseInput> mouseQueue = new();
 		readonly Queue<float> zoomQueue = new();
 		readonly Queue<int2> panQueue = new();
@@ -158,11 +164,15 @@ namespace OpenRA.Platforms.Android
 		{
 			lock (queueLock)
 			{
-				if (mouseQueue.Count == 0)
+				var n = mouseQueue.Count;
+				if (n == 0)
 					return Array.Empty<MouseInput>();
-				var a = mouseQueue.ToArray();
+				// Exact-length array required (foreach uses .Length). Reuse when capacity matches.
+				if (mouseDrainBuf.Length != n)
+					mouseDrainBuf = new MouseInput[n];
+				mouseQueue.CopyTo(mouseDrainBuf, 0);
 				mouseQueue.Clear();
-				return a;
+				return mouseDrainBuf;
 			}
 		}
 
@@ -170,11 +180,15 @@ namespace OpenRA.Platforms.Android
 		{
 			lock (queueLock)
 			{
-				if (zoomQueue.Count == 0)
+				var n = zoomQueue.Count;
+				if (n == 0)
 					return Array.Empty<float>();
-				var a = zoomQueue.ToArray();
+				// Exact-length array required (foreach uses .Length). Reuse when capacity matches.
+				if (zoomDrainBuf.Length != n)
+					zoomDrainBuf = new float[n];
+				zoomQueue.CopyTo(zoomDrainBuf, 0);
 				zoomQueue.Clear();
-				return a;
+				return zoomDrainBuf;
 			}
 		}
 
@@ -182,11 +196,15 @@ namespace OpenRA.Platforms.Android
 		{
 			lock (queueLock)
 			{
-				if (panQueue.Count == 0)
+				var n = panQueue.Count;
+				if (n == 0)
 					return Array.Empty<int2>();
-				var a = panQueue.ToArray();
+				// Exact-length array required (foreach uses .Length). Reuse when capacity matches.
+				if (panDrainBuf.Length != n)
+					panDrainBuf = new int2[n];
+				panQueue.CopyTo(panDrainBuf, 0);
 				panQueue.Clear();
-				return a;
+				return panDrainBuf;
 			}
 		}
 
@@ -194,11 +212,14 @@ namespace OpenRA.Platforms.Android
 		{
 			lock (queueLock)
 			{
-				if (scrollQueue.Count == 0)
+				var n = scrollQueue.Count;
+				if (n == 0)
 					return Array.Empty<(int2, int2)>();
-				var a = scrollQueue.ToArray();
+				if (scrollDrainBuf.Length != n)
+					scrollDrainBuf = new (int2 loc, int2 delta)[n];
+				scrollQueue.CopyTo(scrollDrainBuf, 0);
 				scrollQueue.Clear();
-				return a;
+				return scrollDrainBuf;
 			}
 		}
 
@@ -220,11 +241,15 @@ namespace OpenRA.Platforms.Android
 		{
 			lock (queueLock)
 			{
-				if (keyQueue.Count == 0)
+				var n = keyQueue.Count;
+				if (n == 0)
 					return Array.Empty<KeyInput>();
-				var a = keyQueue.ToArray();
+				// Exact-length array required (foreach uses .Length). Reuse when capacity matches.
+				if (keyDrainBuf.Length != n)
+					keyDrainBuf = new KeyInput[n];
+				keyQueue.CopyTo(keyDrainBuf, 0);
 				keyQueue.Clear();
-				return a;
+				return keyDrainBuf;
 			}
 		}
 

@@ -24,6 +24,10 @@ namespace OpenRA.Platforms.Android
 		static EGLConfig config;
 		static bool initialized;
 
+		// Reused for eglChooseConfig / queries — avoid new int[1]/EGLConfig[1] on every surface lifecycle.
+		static readonly int[] SingleInt = new int[1];
+		static readonly EGLConfig[] SingleConfig = new EGLConfig[1];
+
 		public static bool IsReady
 		{
 			get
@@ -86,10 +90,10 @@ namespace OpenRA.Platforms.Android
 						EGL14.EglNone
 					};
 
-					var configs = new EGLConfig[1];
-					var numConfigs = new int[1];
-					if (!EGL14.EglChooseConfig(display, attribList, 0, configs, 0, configs.Length, numConfigs, 0)
-					    || numConfigs[0] == 0)
+					SingleConfig[0] = null;
+					SingleInt[0] = 0;
+					if (!EGL14.EglChooseConfig(display, attribList, 0, SingleConfig, 0, SingleConfig.Length, SingleInt, 0)
+					    || SingleInt[0] == 0)
 					{
 						AndroidPlatformLog.Warn("OpenRA.EGL", "ES3 config missing, trying ES2");
 						attribList = new[]
@@ -103,12 +107,12 @@ namespace OpenRA.Platforms.Android
 							EGL14.EglSurfaceType, EGL14.EglWindowBit,
 							EGL14.EglNone
 						};
-						if (!EGL14.EglChooseConfig(display, attribList, 0, configs, 0, configs.Length, numConfigs, 0)
-						    || numConfigs[0] == 0)
+						if (!EGL14.EglChooseConfig(display, attribList, 0, SingleConfig, 0, SingleConfig.Length, SingleInt, 0)
+						    || SingleInt[0] == 0)
 							return FailHard("eglChooseConfig failed: " + EglError());
 					}
 
-					config = configs[0];
+					config = SingleConfig[0];
 
 					int[] ctxAttribs =
 					{

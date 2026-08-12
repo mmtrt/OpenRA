@@ -6,7 +6,9 @@
 #endregion
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Android.Opengl;
@@ -45,10 +47,17 @@ namespace OpenRA.Platforms.Android
 			var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
 			try
 			{
-				var tmp = new byte[bytes];
-				Marshal.Copy(handle.AddrOfPinnedObject(), tmp, 0, bytes);
-				bb.Put(tmp);
-				bb.Position(0);
+				var tmp = ArrayPool<byte>.Shared.Rent(bytes);
+				try
+				{
+					Marshal.Copy(handle.AddrOfPinnedObject(), tmp, 0, bytes);
+					bb.Put(tmp, 0, bytes);
+					bb.Position(0);
+				}
+				finally
+				{
+					ArrayPool<byte>.Shared.Return(tmp, clearArray: false);
+				}
 			}
 			finally
 			{
@@ -87,7 +96,9 @@ namespace OpenRA.Platforms.Android
 		static int totalErrors;
 		static bool capsLogged;
 
-		/// <summary>Drain glGetError until NO_ERROR; log each new context+code once.</summary>
+		/// <summary>Drain glGetError until NO_ERROR; log each new context+code once.
+		/// Conditional(DEBUG): call sites compile away in Release — avoids string allocs in the render loop.</summary>
+		[Conditional("DEBUG")]
 		public static void Check(string context)
 		{
 			// Drain the full error queue (desktop CheckGLError only reads one, but drivers
@@ -461,6 +472,7 @@ namespace OpenRA.Platforms.Android
 		readonly int buffer;
 		readonly int elementSize;
 		readonly bool dynamic;
+		ByteBuffer uploadBuffer; // grown once, reused every SetData
 
 		public AndroidVertexBuffer(int size)
 		{
@@ -495,6 +507,7 @@ namespace OpenRA.Platforms.Android
 
 		/// <summary>
 		/// Desktop semantics: offset = source array index, start = GPU buffer index.
+		/// Pools the direct ByteBuffer + scratch byte[] to avoid per-frame Gen0 pressure.
 		/// </summary>
 		public void SetData(T[] vertices, int offset, int start, int length)
 		{
@@ -504,27 +517,42 @@ namespace OpenRA.Platforms.Android
 			GLES20.GlBindBuffer(GLES20.GlArrayBuffer, buffer);
 
 			var byteLen = length * elementSize;
+			if (uploadBuffer == null || uploadBuffer.Capacity() < byteLen)
+			{
+				uploadBuffer = ByteBuffer.AllocateDirect(byteLen);
+				uploadBuffer.Order(ByteOrder.NativeOrder());
+			}
+			else
+			{
+				uploadBuffer.Clear();
+			}
+
 			var handle = GCHandle.Alloc(vertices, GCHandleType.Pinned);
 			try
 			{
 				var src = handle.AddrOfPinnedObject() + offset * elementSize;
-				var tmp = new byte[byteLen];
-				Marshal.Copy(src, tmp, 0, byteLen);
-				var bb = ByteBuffer.AllocateDirect(byteLen);
-				bb.Order(ByteOrder.NativeOrder());
-				bb.Put(tmp);
-				bb.Position(0);
+				var tmp = ArrayPool<byte>.Shared.Rent(byteLen);
+				try
+				{
+					Marshal.Copy(src, tmp, 0, byteLen);
+					uploadBuffer.Put(tmp, 0, byteLen);
+					uploadBuffer.Position(0);
 
-				if (start == 0 && offset == 0 && length == vertices.Length)
-				{
-					var usage = dynamic ? GLES20.GlDynamicDraw : GLES20.GlStaticDraw;
-					GLES20.GlBufferData(GLES20.GlArrayBuffer, byteLen, bb, usage);
+					if (start == 0 && offset == 0 && length == vertices.Length)
+					{
+						var usage = dynamic ? GLES20.GlDynamicDraw : GLES20.GlStaticDraw;
+						GLES20.GlBufferData(GLES20.GlArrayBuffer, byteLen, uploadBuffer, usage);
+					}
+					else
+					{
+						GLES20.GlBufferSubData(GLES20.GlArrayBuffer, start * elementSize, byteLen, uploadBuffer);
+					}
+					GlDiagnostics.Check("VertexBuffer.SetData(off=" + offset + ",start=" + start + ",len=" + length + ")");
 				}
-				else
+				finally
 				{
-					GLES20.GlBufferSubData(GLES20.GlArrayBuffer, start * elementSize, byteLen, bb);
+					ArrayPool<byte>.Shared.Return(tmp, clearArray: false);
 				}
-				GlDiagnostics.Check("VertexBuffer.SetData(off=" + offset + ",start=" + start + ",len=" + length + ")");
 			}
 			finally
 			{
@@ -536,6 +564,7 @@ namespace OpenRA.Platforms.Android
 		{
 			if (buffer != 0)
 				GLES20.GlDeleteBuffers(1, new[] { buffer }, 0);
+			uploadBuffer = null;
 		}
 	}
 
@@ -548,11 +577,22 @@ namespace OpenRA.Platforms.Android
 			var ids = new int[1];
 			GLES20.GlGenBuffers(1, ids, 0);
 			buffer = ids[0];
-			var bytes = new byte[indices.Length * 4];
-			System.Buffer.BlockCopy(indices, 0, bytes, 0, bytes.Length);
-			var bb = GlesBuffers.ToByteBuffer(bytes);
-			GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
-			GLES20.GlBufferData(GLES20.GlElementArrayBuffer, bytes.Length, bb, GLES20.GlStaticDraw);
+			var byteLen = indices.Length * 4;
+			var bytes = ArrayPool<byte>.Shared.Rent(byteLen);
+			try
+			{
+				System.Buffer.BlockCopy(indices, 0, bytes, 0, byteLen);
+				var bb = ByteBuffer.AllocateDirect(byteLen);
+				bb.Order(ByteOrder.NativeOrder());
+				bb.Put(bytes, 0, byteLen);
+				bb.Position(0);
+				GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
+				GLES20.GlBufferData(GLES20.GlElementArrayBuffer, byteLen, bb, GLES20.GlStaticDraw);
+			}
+			finally
+			{
+				ArrayPool<byte>.Shared.Return(bytes, clearArray: false);
+			}
 		}
 
 		public void Bind() => GLES20.GlBindBuffer(GLES20.GlElementArrayBuffer, buffer);
@@ -603,6 +643,20 @@ namespace OpenRA.Platforms.Android
 		// fringing visible on detailed sprites (small, palette-dense sprites like infantry
 		// are hit hardest, since adjacent pixels are more likely to differ in index).
 		TextureScaleFilter scaleFilter = TextureScaleFilter.Nearest;
+		ByteBuffer uploadBuffer; // per-texture reusable direct buffer
+
+		ByteBuffer GetUploadBuffer(int minSize)
+		{
+			if (uploadBuffer != null && uploadBuffer.Capacity() >= minSize)
+			{
+				uploadBuffer.Clear();
+				return uploadBuffer;
+			}
+
+			uploadBuffer = ByteBuffer.AllocateDirect(minSize);
+			uploadBuffer.Order(ByteOrder.NativeOrder());
+			return uploadBuffer;
+		}
 
 		public Size Size => size;
 
@@ -673,7 +727,9 @@ namespace OpenRA.Platforms.Android
 			// is only probed once rather than on every call.
 			if (bgra8ExtSupported != false)
 			{
-				var bb = GlesBuffers.ToByteBuffer(colors);
+				var bb = GetUploadBuffer(colors.Length);
+				bb.Put(colors);
+				bb.Position(0);
 				while (GLES20.GlGetError() != GLES20.GlNoError) { }
 				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GL_BGRA8_EXT, width, height, 0,
 									GL_BGRA_EXT, GLES20.GlUnsignedByte, bb);
@@ -699,25 +755,31 @@ namespace OpenRA.Platforms.Android
 										" using RGBA8 with CPU-side R/B swap for all textures from now on");
 			}
 
-			// CRITICAL: colors[] is laid out in BGRA byte order (OpenRA's internal
-			// convention). Simply re-uploading those same bytes labeled as GL_RGBA does NOT
-			// reinterpret them — it tells the GPU the red and blue channels are in the
-			// opposite of their actual positions, systematically swapping red and blue in
-			// every pixel sampled from this texture. We must swap them back on the CPU
-			// before upload so the final rendered colors are correct.
-			var swapped = new byte[colors.Length];
-			for (var i = 0; i + 3 < colors.Length; i += 4)
+			// CRITICAL: colors[] is BGRA. Must R/B swap on CPU for RGBA upload (Adreno path).
+			// Use ArrayPool to avoid allocating a full-frame buffer every upload.
+			var swapped = ArrayPool<byte>.Shared.Rent(colors.Length);
+			try
 			{
-				swapped[i] = colors[i + 2];     // R <- B
-				swapped[i + 1] = colors[i + 1]; // G
-				swapped[i + 2] = colors[i];     // B <- R
-				swapped[i + 3] = colors[i + 3]; // A
+				for (var i = 0; i + 3 < colors.Length; i += 4)
+				{
+					swapped[i] = colors[i + 2];     // R <- B
+					swapped[i + 1] = colors[i + 1]; // G
+					swapped[i + 2] = colors[i];     // B <- R
+					swapped[i + 3] = colors[i + 3]; // A
+				}
+
+				var swappedBb = GetUploadBuffer(colors.Length);
+				swappedBb.Put(swapped, 0, colors.Length);
+				swappedBb.Position(0);
+				GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
+									GLES20.GlRgba, GLES20.GlUnsignedByte, swappedBb);
+				GlDiagnostics.Check("Texture.SetData RGBA fallback (R/B swapped) " + width + "x" + height);
+			}
+			finally
+			{
+				ArrayPool<byte>.Shared.Return(swapped, clearArray: false);
 			}
 
-			var swappedBb = GlesBuffers.ToByteBuffer(swapped);
-			GLES20.GlTexImage2D(GLES20.GlTexture2d, 0, GLES20.GlRgba, width, height, 0,
-								GLES20.GlRgba, GLES20.GlUnsignedByte, swappedBb);
-			GlDiagnostics.Check("Texture.SetData RGBA fallback (R/B swapped) " + width + "x" + height);
 			ApplyPaletteFilterIfNeeded(width);
 		}
 
@@ -737,7 +799,10 @@ namespace OpenRA.Platforms.Android
 		{
 			EnsureTexture();
 			size = new Size(width, height);
-			var bb = GlesBuffers.ToByteBuffer(data);
+			var bb = GetUploadBuffer(data.Length * 4);
+			var fb = bb.AsFloatBuffer();
+			fb.Put(data);
+			bb.Position(0);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
 			GLES30.GlTexImage2D(GLES20.GlTexture2d, 0, GLES30.GlRgba16f, width, height, 0,
 								GLES20.GlRgba, GLES20.GlFloat, bb);
@@ -762,8 +827,8 @@ namespace OpenRA.Platforms.Android
 				AndroidPlatformLog.Error("OpenRA.GL",
 										 "SetEmpty RGBA8 " + width + "x" + height + " glError=0x" + err.ToString("X")
 										 + (err == 0x505 ? " GL_OUT_OF_MEMORY — world FBO/sheets may be incomplete" : ""));
-				else
-					GlDiagnostics.Check("Texture.SetEmpty RGBA8 " + width + "x" + height);
+			else
+				GlDiagnostics.Check("Texture.SetEmpty RGBA8 " + width + "x" + height);
 		}
 
 		public void SetDataFromReadBuffer(Rectangle rect)
@@ -790,6 +855,7 @@ namespace OpenRA.Platforms.Android
 				GLES20.GlDeleteTextures(1, new[] { texture }, 0);
 				texture = 0;
 			}
+			uploadBuffer = null;
 		}
 	}
 
@@ -1196,13 +1262,33 @@ namespace OpenRA.Platforms.Android
 			if (loc < 0)
 				return;
 			GLES20.GlUseProgram(program);
-			var arr = vec.Span.Slice(0, Math.Min(length, vec.Length)).ToArray();
+			var span = vec.Span.Slice(0, Math.Min(length, vec.Length));
 			switch (length)
 			{
-				case 1: GLES20.GlUniform1fv(loc, 1, arr, 0); break;
-				case 2: GLES20.GlUniform2fv(loc, 1, arr, 0); break;
-				case 3: GLES20.GlUniform3fv(loc, 1, arr, 0); break;
-				default: GLES20.GlUniform4fv(loc, Math.Max(1, length / 4), arr, 0); break;
+				case 1:
+					GLES20.GlUniform1f(loc, span[0]);
+					break;
+				case 2:
+					GLES20.GlUniform2f(loc, span[0], span[1]);
+					break;
+				case 3:
+					GLES20.GlUniform3f(loc, span[0], span[1], span[2]);
+					break;
+				default:
+				{
+					// JNI GlUniform4fv needs float[]; rent only for 4+ component uniforms.
+					var arr = ArrayPool<float>.Shared.Rent(length);
+					try
+					{
+						span.Slice(0, length).CopyTo(arr);
+						GLES20.GlUniform4fv(loc, Math.Max(1, length / 4), arr, 0);
+					}
+					finally
+					{
+						ArrayPool<float>.Shared.Return(arr, clearArray: false);
+					}
+					break;
+				}
 			}
 
 			GlDiagnostics.Check("Shader.SetVec(" + name + ", n=" + length + ")");
