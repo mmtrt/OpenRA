@@ -44,7 +44,7 @@ namespace OpenRA.Android
 					bg.SetImageResource(id);
 			}
 			catch { /* ignore */ }
-			bg.SetColorFilter(new PorterDuffColorFilter(AColor.Argb(140, 0x08, 0x08, 0x0c), PorterDuff.Mode.SrcAtop));
+			bg.SetColorFilter(new PorterDuffColorFilter(AColor.Argb(100, 0x04, 0x06, 0x08), PorterDuff.Mode.SrcAtop));
 			AddView(bg, new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
@@ -110,6 +110,7 @@ namespace OpenRA.Android
 				TextSize = 12f,
 				Gravity = GravityFlags.CenterHorizontal
 			};
+			// Slightly softer than body so panel chrome reads like official progress dialog.
 			downloadStatus.SetTextColor(mod.BodyColor);
 
 			var row = new LinearLayout(context) { Orientation = Orientation.Horizontal };
@@ -124,7 +125,7 @@ namespace OpenRA.Android
 			downloadPanel.AddView(dlTitle, MatchWrap());
 			downloadPanel.AddView(dlDivider, DividerLp());
 			downloadPanel.AddView(progress, new LinearLayout.LayoutParams(
-				ViewGroup.LayoutParams.MatchParent, Dp(12)) { TopMargin = Dp(8), BottomMargin = Dp(8) });
+				ViewGroup.LayoutParams.MatchParent, Dp(16)) { TopMargin = Dp(10), BottomMargin = Dp(8) });
 			downloadPanel.AddView(downloadStatus, MatchWrap());
 			downloadPanel.AddView(row, MatchWrap());
 			downloadPanel.Visibility = ViewStates.Gone;
@@ -144,12 +145,24 @@ namespace OpenRA.Android
 		LinearLayout MakeCard(Context context)
 		{
 			var card = new LinearLayout(context) { Orientation = Orientation.Vertical };
+			// Official OpenRA dialog: semi-transparent olive panel so faction chrome shows through.
+			var panel = AColor.Argb(0xB0, 0x14, 0x18, 0x10);
+			try
+			{
+				// Keep mod tint but force ~69% alpha (0xB0) for see-through panel.
+				var c = mod.BackgroundColor;
+				panel = AColor.Argb(0xB0, c.R & 0xFF, c.G & 0xFF, c.B & 0xFF);
+			}
+			catch { /* ignore */ }
+
 			var cardBg = new GradientDrawable();
-			cardBg.SetColor(mod.BackgroundColor);
+			cardBg.SetColor(panel);
 			cardBg.SetStroke(Dp(2), mod.PrimaryColor);
-			cardBg.SetCornerRadius(Dp(4));
+			cardBg.SetCornerRadius(Dp(3));
 			card.Background = cardBg;
 			card.SetPadding(Dp(22), Dp(18), Dp(22), Dp(16));
+			// Let the patterned install_bg show through the translucent panel.
+			card.SetLayerType(LayerType.Hardware, null);
 			return card;
 		}
 
@@ -186,14 +199,24 @@ namespace OpenRA.Android
 
 		Button MakeButton(Context context, string text)
 		{
-			var b = new Button(context) { Text = text, TextSize = 12f };
-			b.SetTextColor(mod.TitleColor);
+			// Official chrome: dark inset face, thin theme border, cream label.
+			var b = new Button(context)
+			{
+				Text = text,
+				TextSize = 13f
+			};
+			b.SetAllCaps(false);
+			b.SetTextColor(AColor.Rgb(0xE8, 0xE0, 0xC8));
+			try { b.StateListAnimator = null; } catch { /* pre-L */ }
+			try { b.Elevation = 0f; } catch { /* pre-L */ }
 			var bg = new GradientDrawable();
-			bg.SetColor(AColor.Rgb(0x3a, 0x3a, 0x32));
+			bg.SetShape(ShapeType.Rectangle);
+			bg.SetColor(AColor.Argb(0xCC, 0x28, 0x2A, 0x22));
 			bg.SetStroke(2, mod.PrimaryColor);
-			bg.SetCornerRadius(6f);
+			bg.SetCornerRadius(Dp(4));
 			b.Background = bg;
-			b.SetPadding(Dp(14), Dp(10), Dp(14), Dp(10));
+			b.SetPadding(Dp(16), Dp(8), Dp(16), Dp(8));
+			b.SetMinimumHeight(Dp(36));
 			return b;
 		}
 
@@ -248,18 +271,26 @@ namespace OpenRA.Android
 
 		static global::Android.Graphics.Drawables.Drawable BuildThemedProgressDrawable(ModInfo mod)
 		{
+			// Official-style: hollow dark track with thin theme border + inset fill bar.
+			const float radius = 3f;
 			var track = new GradientDrawable();
-			track.SetColor(AColor.Argb(0x55, 0x20, 0x20, 0x18));
-			track.SetCornerRadius(4f);
+			track.SetShape(ShapeType.Rectangle);
+			track.SetColor(AColor.Argb(0x88, 0x0c, 0x0e, 0x0a));
+			track.SetStroke(2, mod.PrimaryColor); // same border color as dialog frame
+			track.SetCornerRadius(radius);
 
 			var fill = new GradientDrawable();
-			fill.SetColor(mod.PrimaryColor);
-			fill.SetCornerRadius(4f);
+			fill.SetShape(ShapeType.Rectangle);
+			// Lighter fill so it reads clearly inside the bordered track (official cream/gray bar).
+			fill.SetColor(AColor.Argb(0xEE, 0xC8, 0xC8, 0xB8));
+			fill.SetCornerRadius(radius);
 			var clip = new ClipDrawable(fill, GravityFlags.Left, ClipDrawableOrientation.Horizontal);
 
 			var layers = new LayerDrawable(new Drawable[] { track, clip });
 			layers.SetId(0, global::Android.Resource.Id.Background);
 			layers.SetId(1, global::Android.Resource.Id.Progress);
+			// Inset fill slightly so the border stroke stays visible around the progress.
+			layers.SetLayerInset(1, 3, 3, 3, 3);
 			return layers;
 		}
 

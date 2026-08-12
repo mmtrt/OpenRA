@@ -156,6 +156,7 @@ namespace OpenRA.Android
 			{
 				"OpenRA.Mods.Common.dll",
 				"OpenRA.Mods.Cnc.dll",
+				"OpenRA.Mods.D2k.dll",
 				"Eluant.dll",
 				"TagLibSharp.dll",
 				"Newtonsoft.Json.dll",
