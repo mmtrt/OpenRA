@@ -15,10 +15,22 @@ namespace OpenRA.Android
 		public sealed class Progress
 		{
 			public string Status { get; set; }
+			public string Host { get; set; }
 			public long BytesReceived { get; set; }
 			public long? TotalBytes { get; set; }
 			public double Fraction =>
 				TotalBytes is > 0 ? Math.Min(1.0, (double)BytesReceived / TotalBytes.Value) : 0;
+
+			public static string FormatDownload(string host, long received, long? total)
+			{
+				host = string.IsNullOrEmpty(host) ? "mirror" : host;
+				if (total is > 0)
+				{
+					var pct = (int)Math.Min(100, received * 100.0 / total.Value);
+					return $"Downloading from {host} {received / (1024.0 * 1024.0):0.00} / {total.Value / (1024.0 * 1024.0):0.00} MB ({pct}%)";
+				}
+				return $"Downloading from {host} {received / (1024.0 * 1024.0):0.00} MB";
+			}
 		}
 
 		public static async Task InstallAsync(
@@ -117,6 +129,9 @@ namespace OpenRA.Android
 
 		static async Task DownloadAsync(string url, string destPath, IProgress<Progress> progress, CancellationToken ct)
 		{
+			var host = "mirror";
+			try { host = new Uri(url).Host; } catch { /* ignore */ }
+
 			using var http = CreateHttp();
 			using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
 				.ConfigureAwait(false);
@@ -137,9 +152,8 @@ namespace OpenRA.Android
 				readTotal += n;
 				progress?.Report(new Progress
 				{
-					Status = total is > 0
-						? $"Downloading… {readTotal / (1024 * 1024)}/{total.Value / (1024 * 1024)} MB"
-						: $"Downloading… {readTotal / (1024 * 1024)} MB",
+					Host = host,
+					Status = Progress.FormatDownload(host, readTotal, total),
 					BytesReceived = readTotal,
 					TotalBytes = total
 				});
@@ -166,7 +180,7 @@ namespace OpenRA.Android
 				entry.ExtractToFile(dest, overwrite: true);
 				i++;
 				if (i % 25 == 0)
-					progress?.Report(new Progress { Status = $"Extracting… {i}/{entries.Length}" });
+					progress?.Report(new Progress { Status = $"Extracting… {i}/{entries.Length}", BytesReceived = i, TotalBytes = entries.Length });
 			}
 		}
 

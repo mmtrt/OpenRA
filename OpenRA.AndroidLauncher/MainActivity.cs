@@ -176,6 +176,10 @@ namespace OpenRA.Android
 			installView.QuickInstallClicked += OnQuickInstall;
 			installView.AdvancedInstallClicked += OnAdvancedInstall;
 			installView.QuitClicked += () => Finish();
+			installView.CancelDownloadClicked += () =>
+			{
+				try { installCts?.Cancel(); } catch { /* ignore */ }
+			};
 			root.AddView(installView, new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 			statusOverlay.Text = "Install required content to continue\n" + ContentBootstrap.SupportDir;
@@ -194,7 +198,8 @@ namespace OpenRA.Android
 			installCts?.Cancel();
 			installCts = new CancellationTokenSource();
 			var support = ContentBootstrap.SupportDir;
-			installView?.SetBusy(true, "Starting Quick Install…");
+			installView?.ShowDownloadProgress();
+			installView?.SetProgress("Fetching mirror list…", 0);
 
 			var progress = new Progress<QuickInstallService.Progress>(p =>
 			{
@@ -215,14 +220,14 @@ namespace OpenRA.Android
 			}
 			catch (System.OperationCanceledException)
 			{
-				RunOnUiThread(() => installView?.SetBusy(false, "Cancelled."));
+				RunOnUiThread(() => installView?.ShowChoice("Cancelled."));
 			}
 			catch (Exception e)
 			{
 				AndroidFileLog.Exception("OpenRA.Install", e);
 				RunOnUiThread(() =>
 				{
-					installView?.SetBusy(false, "Failed: " + e.Message);
+					installView?.ShowChoice("Failed: " + e.Message);
 					Toast.MakeText(this, "Quick Install failed — see SupportDir/Logs/", ToastLength.Long).Show();
 				});
 			}
