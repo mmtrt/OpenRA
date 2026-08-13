@@ -30,9 +30,13 @@
     <RunAOTCompilation>false</RunAOTCompilation>
     <OpenRAAndroid>true</OpenRAAndroid>
   </PropertyGroup>
+  <!-- Mod DLLs compiled into APK (install_assemblies equivalent). -->
 <ItemGroup>
     <ProjectReference Include="..\OpenRA.Platforms.Android\OpenRA.Platforms.Android.csproj" AdditionalProperties="OpenRAAndroid=true" />
     <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" AdditionalProperties="OpenRAAndroid=true" />
+    <ProjectReference Include="..\OpenRA.Mods.Common\OpenRA.Mods.Common.csproj" AdditionalProperties="OpenRAAndroid=true" />
+    <ProjectReference Include="..\OpenRA.Mods.Cnc\OpenRA.Mods.Cnc.csproj" AdditionalProperties="OpenRAAndroid=true" />
+    <ProjectReference Include="..\OpenRA.Mods.D2k\OpenRA.Mods.D2k.csproj" AdditionalProperties="OpenRAAndroid=true" Condition="'$(OpenRAMod)' == 'd2k'" />
   </ItemGroup>
 
   <!-- SDL2 intentionally omitted: libSDL2.so JNI_OnLoad aborts without full org.libsdl.app.

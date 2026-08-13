@@ -374,19 +374,15 @@ jobs:
           echo "Restoring launcher ..."
           dotnet restore "${LAUNCHER_CSPROJ}" /p:OpenRAAndroid=true --verbosity minimal
 
-          # OpenRA.Mods.Common / OpenRA.Mods.Cnc are loaded reflectively at runtime (not
-          # project-referenced by the launcher), so they must be built for net10.0-android
-          # themselves. The "Cache MSBuild intermediates (obj)" step above restores a
-          # cached obj/ for these projects across runs, and GitHub Actions cache restores
-          # reset file timestamps — which can fool MSBuild's incremental up-to-date check
-          # into reusing a stale project.assets.json from a previous net10.0 (desktop)
-          # restore instead of re-resolving for net10.0-android. That mismatch compiles
-          # cleanly but pulls in a different reference-assembly version of framework types
-          # like System.Collections.Immutable than what's actually bundled at runtime,
-          # producing "MissingMethodException: Method not found" for things like
-          # System.Linq.ImmutableArrayExtensions.All at startup. Apply the same
-          # clear-then-force-restore-then-verify treatment used for OpenRA.Game above.
-          for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc; do
+          # Mod assemblies are ProjectReferenced by OpenRA.AndroidLauncher (compile-in).
+          # Still force-restore each Mods.* project for net10.0-android so the launcher
+          # restore/build does not pick up a stale desktop project.assets.json from cache
+          # (MissingMethodException on ImmutableArrayExtensions etc.).
+          MOD_PROJS="OpenRA.Mods.Common OpenRA.Mods.Cnc"
+          if [ "${{ matrix.mod }}" = "d2k" ]; then
+            MOD_PROJS="$MOD_PROJS OpenRA.Mods.D2k"
+          fi
+          for proj in $MOD_PROJS; do
             if [ ! -f "$proj/$proj.csproj" ]; then
               echo "WARNING: $proj/$proj.csproj not found — skip restore"
               continue
@@ -432,7 +428,7 @@ jobs:
             /p:OpenRAAndroid=true \
             --verbosity minimal
 
-      - name: Build mod assemblies (Android TFM)
+      - name: Build mod assemblies (compile-in / Android TFM)
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
@@ -445,7 +441,11 @@ jobs:
           # path gets bundled into the APK and crashes at runtime even when the source
           # is patched correctly. This previously caused exactly that: a "fixed"
           # DiscordService still throwing System.TypeLoadException on device.
-          for proj in OpenRA.Mods.Common OpenRA.Mods.Cnc; do
+          MOD_PROJS="OpenRA.Mods.Common OpenRA.Mods.Cnc"
+          if [ "${{ matrix.mod }}" = "d2k" ]; then
+            MOD_PROJS="$MOD_PROJS OpenRA.Mods.D2k"
+          fi
+          for proj in $MOD_PROJS; do
             if [ -f "$proj/$proj.csproj" ]; then
               echo "=== Building $proj ($CONFIG, net10.0-android) ==="
               # --no-restore: the Restore step already force-restored this project for
@@ -463,36 +463,31 @@ jobs:
             fi
           done
 
-      - name: Package Android assets (mods, glsl, assemblies)
+      - name: Package Android assets (mods, glsl — compile-in DLLs)
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           set -euo pipefail
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
           chmod +x scripts/package-android-assets.sh
-          # Package FULL mod trees + assemblies from the same tree that built the DLLs.
-          # Fixes ruleset errors like: v2rl Chronoshiftable requires Mobile or Husk
-          # (caused by incomplete YAML or DLL/YAML version skew).
-          OPENRA_MOD="${{ matrix.mod }}" ./scripts/package-android-assets.sh \
+          # YAML/chrome/glsl only. Mod DLLs are ProjectReferenced into the launcher APK.
+          COMPILE_IN_ASSEMBLIES=1 OPENRA_MOD="${{ matrix.mod }}" ./scripts/package-android-assets.sh \
             "${{ github.workspace }}" \
             "OpenRA.AndroidLauncher/Assets" \
             "$CONFIG"
 
-          # Extra guard: rules files required for RA ruleset validation
           ASSETS="OpenRA.AndroidLauncher/Assets"
           test -d "$ASSETS/mods/${{ matrix.mod }}"
           test -f "$ASSETS/mods/${{ matrix.mod }}/mod.yaml"
-          # mods/common is a shared package (no mod.yaml on bleed) — require dir + font
           test -d "$ASSETS/mods/common"
           test -f "$ASSETS/mods/common/FreeSans.ttf" || test -f "$ASSETS/mods/common/FreeSansBold.ttf"
-          test -f "$ASSETS/assemblies/OpenRA.Mods.Common.dll"
-          test -f "$ASSETS/assemblies/OpenRA.Mods.Cnc.dll"
-          echo "Workflow packaging OK"
+          rm -f "$ASSETS/assemblies"/OpenRA.Mods.*.dll 2>/dev/null || true
+          echo "Workflow packaging OK (compile-in — no Mods DLLs in Assets)"
 
       - name: Build Launcher
         working-directory: ${{ env.PROJECT_ROOT }}
         run: |
           CONFIG="${{ github.event.inputs.configuration || 'Release' }}"
-          echo "Building launcher: $CONFIG"
+          echo "Building launcher: $CONFIG (compile-in Mods.* via ProjectReference)"
           dotnet build "${LAUNCHER_CSPROJ}" \
             -c "$CONFIG" \
             -f ${{ env.TFM }} \
@@ -500,6 +495,22 @@ jobs:
             -p:OpenRAMod=${{ matrix.mod }} \
             -p:RuntimeIdentifier=${{ env.RID }} \
             --verbosity minimal
+          echo "=== Compile-in OpenRA.Mods.*.dll (bin-android / launcher) ==="
+          find bin-android OpenRA.AndroidLauncher -name 'OpenRA.Mods.*.dll' 2>/dev/null | head -20 || true
+          COMMON=$(find bin-android OpenRA.AndroidLauncher -name 'OpenRA.Mods.Common.dll' 2>/dev/null | head -1 || true)
+          if [ -z "$COMMON" ] || [ "$(stat -c%s "$COMMON")" -lt 100000 ]; then
+            echo "ERROR: OpenRA.Mods.Common.dll missing from compile-in build"
+            exit 1
+          fi
+          echo "OK Common=$(stat -c%s "$COMMON") $COMMON"
+          if [ "${{ matrix.mod }}" = "d2k" ]; then
+            D2K=$(find bin-android OpenRA.AndroidLauncher -name 'OpenRA.Mods.D2k.dll' 2>/dev/null | head -1 || true)
+            if [ -z "$D2K" ] || [ "$(stat -c%s "$D2K")" -lt 50000 ]; then
+              echo "ERROR: OpenRA.Mods.D2k.dll missing/small after launcher build"
+              exit 1
+            fi
+            echo "OK D2k=$(stat -c%s "$D2K") $D2K"
+          fi
 
       - name: Publish APK
         working-directory: ${{ env.PROJECT_ROOT }}

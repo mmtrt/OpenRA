@@ -62,17 +62,20 @@ namespace OpenRA.Android
 			var marker = Path.Combine(SupportDir, ".assets_extracted");
 			var needExtract = !File.Exists(marker) || !HasAnyMod() || !HasStagedModAssembly();
 
-			if (needExtract && !extractedThisProcess)
+			// Engine assets (mods/chrome/fluent, glsl, assemblies) must refresh from APK when
+			// incomplete OR when chrome/fluent lack Touch keys (old extract left stale files —
+			// TryCopyFile used to skip non-empty destinations, so CNC showed raw fluent keys).
+			var staleChrome = EngineAssetsLookStale();
+			if ((needExtract || staleChrome) && !extractedThisProcess)
 			{
 				extractedThisProcess = true;
-				AndroidFileLog.Info("OpenRA.Content", "Extracting APK engine assets (first time / incomplete)…");
-				// Order matters: assemblies + mods before any engine start. User MIX content is separate.
-				ExtractAssetsFolder("assemblies", AssembliesDir);
-				ExtractAssetsFolder("mods", ModsDir);
-				ExtractAssetsFolder("glsl", GlslDir);
-				// APK may ship a tiny Content/ placeholder — never block on it; do not wipe user files
-				// (TryCopyFile skips existing non-empty destinations).
-				ExtractAssetsFolder("Content", ContentDir);
+				AndroidFileLog.Info("OpenRA.Content",
+					"Extracting APK engine assets (needExtract=" + needExtract + " stale=" + staleChrome + ")…");
+				// Overwrite engine files; never treat user Content/ the same way.
+				ExtractAssetsFolder("assemblies", AssembliesDir, overwrite: true);
+				ExtractAssetsFolder("mods", ModsDir, overwrite: true);
+				ExtractAssetsFolder("glsl", GlslDir, overwrite: true);
+				ExtractAssetsFolder("Content", ContentDir, overwrite: false);
 				TryExtractRootFile("global mix database.dat", Path.Combine(SupportDir, "global mix database.dat"));
 				PlaceAssembliesForLoader();
 
@@ -201,14 +204,14 @@ namespace OpenRA.Android
 			}
 		}
 
-		public static void ExtractAssetsFolder(string assetFolder, string destDir)
+		public static void ExtractAssetsFolder(string assetFolder, string destDir, bool overwrite = false)
 		{
 			var assets = Application.Context.Assets;
 			if (assets == null) return;
-			ExtractRecursive(assets, assetFolder, destDir);
+			ExtractRecursive(assets, assetFolder, destDir, overwrite);
 		}
 
-		static void ExtractRecursive(AssetManager assets, string assetPath, string destDir)
+		static void ExtractRecursive(AssetManager assets, string assetPath, string destDir, bool overwrite)
 		{
 			string[] list;
 			try { list = assets.List(assetPath); }
@@ -216,7 +219,7 @@ namespace OpenRA.Android
 
 			if (list == null || list.Length == 0)
 			{
-				TryCopyFile(assets, assetPath, destDir);
+				TryCopyFile(assets, assetPath, destDir, overwrite);
 				return;
 			}
 
@@ -230,27 +233,58 @@ namespace OpenRA.Android
 				catch { sub = null; }
 
 				if (sub != null && sub.Length > 0)
-					ExtractRecursive(assets, childAsset, childDest);
+					ExtractRecursive(assets, childAsset, childDest, overwrite);
 				else
-					TryCopyFile(assets, childAsset, childDest);
+					TryCopyFile(assets, childAsset, childDest, overwrite);
 			}
 		}
 
-		static void TryCopyFile(AssetManager assets, string assetPath, string destPath)
+		static void TryCopyFile(AssetManager assets, string assetPath, string destPath, bool overwrite = false)
 		{
 			try
 			{
 				var dir = Path.GetDirectoryName(destPath);
 				if (!string.IsNullOrEmpty(dir))
 					Directory.CreateDirectory(dir);
-				// Skip only if a complete file already exists (user MIX or prior extract).
-				if (File.Exists(destPath) && new FileInfo(destPath).Length > 0)
+				// User Content/: skip existing. Engine mods/glsl/assemblies: overwrite from APK.
+				if (!overwrite && File.Exists(destPath) && new FileInfo(destPath).Length > 0)
 					return;
 				using var input = assets.Open(assetPath);
 				using var output = File.Create(destPath);
 				input.CopyTo(output);
 			}
 			catch { /* missing leaf */ }
+		}
+
+		/// <summary>
+		/// True when a previous extract left chrome/fluent without Touch labels (raw keys on screen).
+		/// </summary>
+		static bool EngineAssetsLookStale()
+		{
+			try
+			{
+				if (string.IsNullOrEmpty(SupportDir) || !Directory.Exists(ModsDir))
+					return true;
+				// Any packaged settings-input that still lacks Touch after we ship it → refresh.
+				foreach (var f in Directory.EnumerateFiles(ModsDir, "settings-input.yaml", SearchOption.AllDirectories))
+				{
+					var text = File.ReadAllText(f);
+					if (text.Contains("MOUSE_CONTROL_DESC_MODERN", StringComparison.Ordinal)
+					    && !text.Contains("MOUSE_CONTROL_DESC_TOUCH", StringComparison.Ordinal))
+						return true;
+				}
+				// CNC loads cnc|fluent/chrome.ftl — keys must resolve there (or common chrome.ftl).
+				foreach (var f in Directory.EnumerateFiles(ModsDir, "chrome.ftl", SearchOption.AllDirectories))
+				{
+					var text = File.ReadAllText(f);
+					// Only flag mod chrome.ftl that has other scheme labels but not touch
+					if (text.Contains("label-mouse-control-desc-modern-selection", StringComparison.Ordinal)
+					    && !text.Contains("label-mouse-control-desc-touch-selection", StringComparison.Ordinal))
+						return true;
+				}
+			}
+			catch { /* ignore */ }
+			return false;
 		}
 
 		public static bool HasAnyMod()
@@ -268,6 +302,16 @@ namespace OpenRA.Android
 		{
 			try
 			{
+				foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					try
+					{
+						var n = a.GetName().Name;
+						if (n == "OpenRA.Mods.Common" || (n != null && n.StartsWith("OpenRA.Mods.", StringComparison.Ordinal)))
+							return true;
+					}
+					catch { /* ignore */ }
+				}
 				foreach (var dir in new[] { SupportDir, AppDomain.CurrentDomain.BaseDirectory, AssembliesDir })
 				{
 					if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))

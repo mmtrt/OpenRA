@@ -257,6 +257,9 @@ namespace OpenRA.Android
 				var args = argsList.ToArray();
 				try { Game.HideCursor = true; } catch { /* older builds */ }
 
+				PreloadBundledModAssemblies(mod);
+				VerifyRequiredModAssemblies(mod);
+
 				// Eluant may load here — ensure DllImportResolver is on every assembly in the default ALC.
 				AndroidNativeBootstrap.AttachResolversToLoadedAssemblies();
 				AndroidFileLog.Info("OpenRA.Bootstrap", "InitializeAndRun " + string.Join(" ", args)
@@ -393,6 +396,125 @@ namespace OpenRA.Android
 			catch (Exception e)
 			{
 				AndroidFileLog.Warn("OpenRA.Bootstrap", "MergeUIScale: " + e.Message);
+			}
+		}
+
+		
+		/// <summary>
+		/// Fail fast with a clear log if mod DLLs expected by mod.yaml are missing.
+		/// D2k needs OpenRA.Mods.D2k.dll; missing it crashes during "Starting OpenRA".
+		/// </summary>
+		
+		/// <summary>
+		/// Mod DLLs are ProjectReferenced into the APK — load them into the default context
+		/// so ObjectCreator / AssemblyResolve never need a disk copy under SupportDir.
+		/// </summary>
+		static void PreloadBundledModAssemblies(string mod)
+		{
+			var names = new System.Collections.Generic.List<string>
+			{
+				"OpenRA.Mods.Common",
+				"OpenRA.Mods.Cnc"
+			};
+			if (string.Equals(mod, "d2k", StringComparison.OrdinalIgnoreCase))
+				names.Add("OpenRA.Mods.D2k");
+
+			foreach (var name in names)
+			{
+				try
+				{
+					var already = false;
+					foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+					{
+						try
+						{
+							if (a.GetName().Name == name)
+							{
+								already = true;
+								AndroidFileLog.Info("OpenRA.Bootstrap", "Already loaded " + name);
+								break;
+							}
+						}
+						catch { /* dynamic */ }
+					}
+					if (already)
+						continue;
+					var loaded = Assembly.Load(name);
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Preloaded " + name + " Location=" + (loaded.Location ?? "(bundled)"));
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Bootstrap", "Preload " + name + ": " + e.Message);
+				}
+			}
+		}
+
+		static void VerifyRequiredModAssemblies(string mod)
+		{
+			try
+			{
+				var required = new System.Collections.Generic.List<string>
+				{
+					"OpenRA.Mods.Common.dll",
+					"OpenRA.Mods.Cnc.dll"
+				};
+				if (string.Equals(mod, "d2k", StringComparison.OrdinalIgnoreCase))
+					required.Add("OpenRA.Mods.D2k.dll");
+
+				var dirs = new[]
+				{
+					AppDomain.CurrentDomain.BaseDirectory,
+					SupportDir,
+					ContentBootstrap.SupportDir
+				};
+
+				foreach (var name in required)
+				{
+					var simple = Path.GetFileNameWithoutExtension(name);
+					var found = false;
+					foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+					{
+						try
+						{
+							if (a.GetName().Name == simple)
+							{
+								found = true;
+								AndroidFileLog.Info("OpenRA.Bootstrap", "Assembly OK (loaded) " + simple);
+								break;
+							}
+						}
+						catch { /* ignore */ }
+					}
+					if (!found)
+					{
+						foreach (var dir in dirs)
+						{
+							if (string.IsNullOrEmpty(dir)) continue;
+							var path = Path.Combine(dir, name);
+							if (File.Exists(path) && new FileInfo(path).Length > 0)
+							{
+								found = true;
+								AndroidFileLog.Info("OpenRA.Bootstrap", "Assembly OK " + path + " (" + new FileInfo(path).Length + " bytes)");
+								break;
+							}
+						}
+					}
+					if (!found)
+					{
+						var msg = "Required assembly missing: " + name + " (mod=" + mod + "). "
+							+ "Build with ProjectReference to OpenRA.Mods.* or package Assets/assemblies.";
+						AndroidFileLog.Error("OpenRA.Bootstrap", msg);
+						throw new FileNotFoundException(msg, name);
+					}
+				}
+			}
+			catch (FileNotFoundException)
+			{
+				throw;
+			}
+			catch (Exception e)
+			{
+				AndroidFileLog.Warn("OpenRA.Bootstrap", "VerifyRequiredModAssemblies: " + e.Message);
 			}
 		}
 

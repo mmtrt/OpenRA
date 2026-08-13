@@ -7,6 +7,12 @@ ROOT="$(cd "${1:-.}" && pwd)"
 OUT="${2:-$ROOT/OpenRA.AndroidLauncher/Assets}"
 CONFIG="${3:-Release}"
 OPENRA_MOD="${4:-${OPENRA_MOD:-ra}}"
+# Match desktop install_assemblies flags (AppImage always ships Cnc; D2k only for d2k)
+COPY_CNC_DLL=True
+COPY_D2K_DLL=False
+case "$OPENRA_MOD" in
+  d2k) COPY_D2K_DLL=True ;;
+esac
 OPENRA_BIN="${OPENRA_BIN:-}"
 
 cd "$ROOT"
@@ -72,108 +78,81 @@ if [[ "$MISSING_MOD" -ne 0 ]]; then
   exit 1
 fi
 
-# --- managed assemblies from mod build outputs ---
-copy_dll() {
-  local f="$1"
-  [[ -f "$f" ]] || return 0
-  local base
-  base=$(basename "$f")
-  case "$base" in
-    OpenRA.Game.dll|OpenRA.Platforms.*.dll|System.*.dll|Microsoft.*.dll|netstandard.dll|mscorlib.dll) return 0 ;;
-  esac
-  # Skip pure runtime facades
-  case "$base" in
-    WindowsBase.dll|Presentation*.dll) return 0 ;;
-  esac
-  cp -f "$f" "$OUT/assemblies/"
-  echo "  assembly: $base"
-}
+# --- managed assemblies ---
+# Default: COMPILE_IN_ASSEMBLIES=1 — OpenRA.AndroidLauncher ProjectReferences
+# OpenRA.Mods.Common/Cnc/(D2k) so DLLs ship inside the APK managed payload.
+# Assets/assemblies is NOT required at runtime (Assembly.Load + resolve hook).
+# Set COMPILE_IN_ASSEMBLIES=0 to also stage DLLs under Assets for disk-load fallback.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ASM_OUT="$OUT/assemblies"
+mkdir -p "$ASM_OUT"
 
-find_mod_out() {
-  local proj="$1"
-  local candidate
-  for candidate in \
-    "$ROOT/bin-android" \
-    "$proj/bin-android" \
-    "$proj/bin/$CONFIG/net10.0" \
-    "$proj/bin/$CONFIG" \
-    "bin/net10.0" \
-    "bin" \
-    ${OPENRA_BIN:+"$OPENRA_BIN"}
-  do
-    if [[ -d "$candidate" ]] && ls "$candidate"/*.dll >/dev/null 2>&1; then
-      # Prefer dir that actually contains the project dll
-      if ls "$candidate"/OpenRA.Mods.*.dll >/dev/null 2>&1 || ls "$candidate"/"$proj".dll >/dev/null 2>&1; then
-        echo "$candidate"
-        return 0
-      fi
-    fi
-  done
-  # Fallback: search bin-android specifically. Do NOT fall back to a bare "any dir with
-  # Mods.Common.dll" scan across $ROOT — that can silently pick up a desktop (net10.0)
-  # build sitting in bin/, which looks fine but is missing the #if ANDROID guards and
-  # will reproduce Android-specific crashes (e.g. DiscordService TypeLoadException) even
-  # though the source is patched correctly.
-  local found
-  found=$(find "$ROOT/bin-android" -maxdepth 2 -name 'OpenRA.Mods.Common.dll' -print 2>/dev/null | head -1 || true)
-  if [[ -n "$found" ]]; then
-    dirname "$found"
-    return 0
-  fi
-  return 1
-}
+COMPILE_IN_ASSEMBLIES="${COMPILE_IN_ASSEMBLIES:-1}"
 
-COMMON_OUT=""
-if COMMON_OUT=$(find_mod_out OpenRA.Mods.Common); then
-  echo "Using assembly source: $COMMON_OUT"
-  case "$COMMON_OUT" in
-    "$ROOT/bin-android"*) ;;
-    *) echo "WARNING: assembly source is NOT bin-android/ ($COMMON_OUT)." \
-            "This is almost certainly a desktop (net10.0) build lacking the" \
-            "#if ANDROID guards — build with 'dotnet build -p:OpenRAAndroid=true'" \
-            "first so bin-android/ exists." ;;
-  esac
-  while IFS= read -r f; do
-    copy_dll "$f"
-  done < <(find "$COMMON_OUT" -maxdepth 1 -name '*.dll' -type f | sort)
+if [[ "$COMPILE_IN_ASSEMBLIES" == "1" ]]; then
+  echo "COMPILE_IN_ASSEMBLIES=1 — skip packaging DLLs into Assets/assemblies"
+  echo "  (launcher ProjectReference builds Common+Cnc${COPY_D2K_DLL:+; D2k when OpenRAMod=d2k})"
+  # Remove any stale staged DLLs so we never ship a 38KB stub from an old run
+  rm -f "$ASM_OUT"/OpenRA.Mods.*.dll 2>/dev/null || true
+  # Keep directory so extract paths do not throw; optional marker
+  echo "compile-in" > "$ASM_OUT/.compile_in"
 else
-  echo "WARNING: could not locate Mods.Common output"
-fi
-
-# Common + Cnc always; D2k when packaging d2k.
-MOD_PROJS="OpenRA.Mods.Common OpenRA.Mods.Cnc"
-case "$OPENRA_MOD" in
-  d2k) MOD_PROJS="$MOD_PROJS OpenRA.Mods.D2k" ;;
-esac
-for proj in $MOD_PROJS; do
-  if out=$(find_mod_out "$proj"); then
-    while IFS= read -r f; do
-      case "$(basename "$f")" in
-        OpenRA.Mods.*.dll) copy_dll "$f" ;;
-      esac
-    done < <(find "$out" -maxdepth 1 -name 'OpenRA.Mods.*.dll' -type f)
+  echo "COMPILE_IN_ASSEMBLIES=0 — stage mod DLLs into Assets (legacy disk load)"
+  if [[ "${SKIP_ASSEMBLY_BUILD:-}" == "1" ]]; then
+    echo "SKIP_ASSEMBLY_BUILD=1 — copy from bin-android/bin only"
+    for search in "$ROOT/bin-android" "$ROOT/bin"; do
+      [[ -d "$search" ]] || continue
+      find "$search" -maxdepth 2 -type f -name 'OpenRA.Mods.*.dll' 2>/dev/null | while read -r f; do
+        base=$(basename "$f")
+        if [[ "$base" == "OpenRA.Mods.D2k.dll" && "$COPY_D2K_DLL" != "True" ]]; then
+          continue
+        fi
+        cp -f "$f" "$ASM_OUT/"
+        echo "  assembly: $base ($(stat -c%s "$f" 2>/dev/null || stat -f%z "$f") bytes)"
+      done
+      find "$search" -maxdepth 2 -type f \( \
+        -name 'Eluant.dll' -o -name 'Newtonsoft.Json.dll' -o -name 'Linguini.*.dll' \
+        -o -name 'MP3Sharp.dll' -o -name 'NVorbis.dll' -o -name 'Pfim.dll' \
+        -o -name 'TagLibSharp.dll' -o -name 'BeaconLib.dll' -o -name 'Mono.Nat.dll' \
+        -o -name 'FuzzyLogicLibrary.dll' -o -name 'ICSharpCode.SharpZipLib.dll' \
+        -o -name 'Microsoft.Extensions.DependencyModel.dll' \
+      \) 2>/dev/null | while read -r f; do
+        cp -f "$f" "$ASM_OUT/"
+        echo "  dep: $(basename "$f")"
+      done
+    done
   else
-    echo "WARNING: no output dir for $proj"
-  fi
-done
-
-# Explicit dep fill (AppImage checklist)
-for dep in \
-  TagLibSharp.dll MP3Sharp.dll NVorbis.dll Pfim.dll \
-  BeaconLib.dll rix0rrr.BeaconLib.dll FuzzyLogicLibrary.dll \
-  ICSharpCode.SharpZipLib.dll Mono.Nat.dll Newtonsoft.Json.dll \
-  Linguini.Bundle.dll Linguini.Shared.dll Linguini.Syntax.dll \
-  Microsoft.Extensions.DependencyModel.dll Eluant.dll \
-  OpenRA.Mods.Common.dll OpenRA.Mods.Cnc.dll OpenRA.Mods.D2k.dll
-do
-  if [[ ! -f "$OUT/assemblies/$dep" ]]; then
-    found=$(find "$ROOT" -path '*/OpenRA.AndroidLauncher/*' -prune -o -name "$dep" -print 2>/dev/null | head -1 || true)
-    if [[ -n "$found" ]]; then
-      cp -f "$found" "$OUT/assemblies/"
-      echo "  dep fill: $dep"
+    INSTALL="$SCRIPT_DIR/install-assemblies-android.sh"
+    [[ -f "$INSTALL" ]] || INSTALL="$ROOT/scripts/install-assemblies-android.sh"
+    if [[ ! -f "$INSTALL" ]]; then
+      echo "ERROR: install-assemblies-android.sh not found (required when COMPILE_IN_ASSEMBLIES=0)"
+      exit 1
     fi
+    bash "$INSTALL" "$ROOT" "$ASM_OUT" "$CONFIG" "$COPY_CNC_DLL" "$COPY_D2K_DLL"
   fi
-done
+  min_size_ok() {
+    local f="$1" min="$2"
+    [[ -f "$f" ]] || return 1
+    local sz; sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
+    [[ "$sz" -ge "$min" ]]
+  }
+  if ! min_size_ok "$ASM_OUT/OpenRA.Mods.Common.dll" 100000; then
+    echo "ERROR: OpenRA.Mods.Common.dll missing or too small under Assets"
+    ls -la "$ASM_OUT" || true
+    exit 1
+  fi
+  if [[ "$COPY_CNC_DLL" == "True" ]] && ! min_size_ok "$ASM_OUT/OpenRA.Mods.Cnc.dll" 50000; then
+    echo "ERROR: OpenRA.Mods.Cnc.dll missing or too small"
+    exit 1
+  fi
+  if [[ "$COPY_D2K_DLL" == "True" ]] && ! min_size_ok "$ASM_OUT/OpenRA.Mods.D2k.dll" 50000; then
+    echo "ERROR: OpenRA.Mods.D2k.dll missing or too small"
+    exit 1
+  fi
+  if [[ "$COPY_D2K_DLL" != "True" ]]; then
+    rm -f "$ASM_OUT/OpenRA.Mods.D2k.dll"
+  fi
+fi
 
 echo ""
 echo "=== Ruleset integrity checks (Chronoshiftable / Mobile) ==="
@@ -195,10 +174,14 @@ if [[ "$OPENRA_MOD" == "ra" ]]; then
   require_file "$OUT/mods/ra/rules/vehicles.yaml"
   require_file "$OUT/mods/ra/rules/defaults.yaml"
 fi
-require_file "$OUT/assemblies/OpenRA.Mods.Common.dll"
-require_file "$OUT/assemblies/OpenRA.Mods.Cnc.dll"
-if [[ "$OPENRA_MOD" == "d2k" ]]; then
-  require_file "$OUT/assemblies/OpenRA.Mods.D2k.dll"
+if [[ "${COMPILE_IN_ASSEMBLIES:-1}" == "1" ]]; then
+  echo "  OK compile-in mode — Assets/assemblies DLLs not required"
+else
+  require_file "$OUT/assemblies/OpenRA.Mods.Common.dll"
+  require_file "$OUT/assemblies/OpenRA.Mods.Cnc.dll"
+  if [[ "$OPENRA_MOD" == "d2k" ]]; then
+    require_file "$OUT/assemblies/OpenRA.Mods.D2k.dll"
+  fi
 fi
 
 # Shared package dirs (OpenRA bleed: common has fonts/chrome/scripts — no mod.yaml)
