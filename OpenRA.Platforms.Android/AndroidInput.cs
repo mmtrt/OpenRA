@@ -313,6 +313,19 @@ namespace OpenRA.Platforms.Android
 			holdPanArmed = false;
 		}
 
+		void ResetMultiFingerState()
+		{
+			twoFingerPanActive = false;
+			twoFingerDidPan = false;
+			twoFingerMaxMoved = 0;
+			twoFingerMid = default;
+			twoFingerStartMid = default;
+			twoFingerStartMs = 0;
+			threeFingerZoomActive = false;
+			threeFingerLastY = 0;
+			threeFingerAccumDy = 0;
+		}
+
 		public void OnTouchDown(int id, int x, int y, long timeMs)
 		{
 			ToLogical(ref x, ref y);
