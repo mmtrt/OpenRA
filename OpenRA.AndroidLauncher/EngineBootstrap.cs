@@ -439,25 +439,23 @@ namespace OpenRA.Android
 					"Player:" + nl +
 					tab + "Name: Android Commander" + nl +
 					"Graphics:" + nl +
-					tab + "Mode: Windowed" + nl +
+					tab + "Mode: Fullscreen" + nl +
 					tab + "WindowedSize: " + w + "," + h + nl +
 					tab + "FullscreenSize: " + w + "," + h + nl +
 					tab + "DisableHardwareCursors: true" + nl +
+					tab + "CursorDouble: true" + nl +
 					tab + "GLProfile: Embedded" + nl +
 					tab + "UIScale: 1.75" + nl +
+					tab + "ViewportDistance: Close" + nl +
 					tab + "VSync: true" + nl +
 					"Sound:" + nl +
 					tab + "Device: " + nl +  // empty = default OpenAL device
 					"Game:" + nl +
-					tab + "MouseControlStyle: Touch" + nl;  // Android-only default control scheme
-				// Battlefield camera Close is Graphics.ViewportDistance (OpenRA enum WorldViewport)
-				yaml = yaml.Replace(
-					tab + "UIScale: 1.75" + nl,
-					tab + "UIScale: 1.75" + nl +
-					tab + "ViewportDistance: Close" + nl);
+					tab + "MouseControlStyle: Touch" + nl +  // Android-only default control scheme
+					tab + "TargetLines: Automatic" + nl;
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
-					"Seeded settings.yaml Touch + UIScale 1.75 + ViewportDistance Close " + w + "x" + h);
+					"Seeded settings.yaml Fullscreen + CursorDouble + TargetLines Automatic + Touch + UIScale 1.75 " + w + "x" + h);
 				WritePinnedUIScale(supportDir, 1.75f);
 			}
 			catch (Exception e)
@@ -524,6 +522,36 @@ namespace OpenRA.Android
 						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	ViewportDistance: Close" + Environment.NewLine;
 					changed = true;
 					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted ViewportDistance → Close");
+				}
+				// Video mode: Fullscreen (only if Mode key never set)
+				if (text.IndexOf("Mode:", StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					if (text.Contains("Graphics:"))
+						text = text.Replace("Graphics:", "Graphics:" + Environment.NewLine + "	Mode: Fullscreen");
+					else
+						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	Mode: Fullscreen" + Environment.NewLine;
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted Graphics.Mode → Fullscreen");
+				}
+				// Double-size software cursor (Increase Cursor Size)
+				if (text.IndexOf("CursorDouble", StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					if (text.Contains("Graphics:"))
+						text = text.Replace("Graphics:", "Graphics:" + Environment.NewLine + "	CursorDouble: true");
+					else
+						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	CursorDouble: true" + Environment.NewLine;
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted CursorDouble → true");
+				}
+				// Target lines: Automatic
+				if (text.IndexOf("TargetLines", StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					if (text.Contains("Game:"))
+						text = text.Replace("Game:", "Game:" + Environment.NewLine + "	TargetLines: Automatic");
+					else
+						text += Environment.NewLine + "Game:" + Environment.NewLine + "	TargetLines: Automatic" + Environment.NewLine;
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted TargetLines → Automatic");
 				}
 
 				if (changed)

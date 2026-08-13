@@ -94,10 +94,11 @@ namespace OpenRA.Android
 				"Content/cnc/sounds.mix", "Content/cnc/speech.mix", "Content/cnc/temperat.mix",
 				"Content/cnc/tempicnh.mix", "Content/cnc/transit.mix", "Content/cnc/winter.mix",
 			},
-			ThemePrimary = unchecked((int)0xFF3D7A28),
-			ThemeBackground = unchecked((int)0xDC121A10),
-			ThemeTitle = unchecked((int)0xFFD8E8A8),
-			ThemeBody = unchecked((int)0xFFB8C8A0),
+			// TD main-menu red chrome
+			ThemePrimary = unchecked((int)0xFFB02820),
+			ThemeBackground = unchecked((int)0xDC1A1010),
+			ThemeTitle = unchecked((int)0xFFE8C0A8),
+			ThemeBody = unchecked((int)0xFFC8A898),
 			InstallBlurb =
 				"Tiberian Dawn requires artwork and audio from the original game.\n\n" +
 				"Quick Install will automatically download this content (without music " +
@@ -158,10 +159,11 @@ namespace OpenRA.Android
 			{
 				"Content/ts/sidenc01.mix", "Content/ts/tibsun.mix",
 			},
-			ThemePrimary = unchecked((int)0xFF287868),
-			ThemeBackground = unchecked((int)0xDC101818),
-			ThemeTitle = unchecked((int)0xFFA8E0D0),
-			ThemeBody = unchecked((int)0xFFA0C0B8),
+			// Former CNC install green (Tiberian lineage)
+			ThemePrimary = unchecked((int)0xFF3D7A28),
+			ThemeBackground = unchecked((int)0xDC121A10),
+			ThemeTitle = unchecked((int)0xFFD8E8A8),
+			ThemeBody = unchecked((int)0xFFB8C8A0),
 			InstallBlurb =
 				"Tiberian Sun (experimental) requires artwork and audio from the original game.\n\n" +
 				"Quick Install downloads the freeware content pack when mirrors are available."
