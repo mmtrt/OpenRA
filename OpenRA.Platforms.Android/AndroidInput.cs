@@ -317,13 +317,23 @@ namespace OpenRA.Platforms.Android
 		{
 			ToLogical(ref x, ref y);
 			lastPointerLogical = new int2(x, y);
+
+			// Android can re-deliver the same pointer id; replace instead of stacking ghosts.
+			var existing = IndexOf(id);
+			if (existing >= 0)
+				active.RemoveAt(existing);
 			active.Add(new TouchPoint(id, x, y, timeMs));
+
+			// Never track more than 3 contacts — drop oldest ghosts if driver glitches.
+			while (active.Count > 3)
+				active.RemoveAt(0);
 
 			if (active.Count == 1)
 			{
 				primary = active[0];
 				ResetOneFinger();
 				holdPanOrigin = new int2(x, y);
+				ResetMultiFingerState();
 			}
 			else if (active.Count == 2)
 			{
@@ -343,8 +353,9 @@ namespace OpenRA.Platforms.Android
 				twoFingerStartMid = twoFingerMid;
 				twoFingerStartMs = timeMs;
 				threeFingerZoomActive = false;
+				threeFingerAccumDy = 0;
 			}
-			else if (active.Count == 3)
+			else if (active.Count >= 3)
 			{
 				// Third finger: end any two-finger pan, start three-finger zoom tracking.
 				var scheme = CurrentScheme();
@@ -521,6 +532,11 @@ namespace OpenRA.Platforms.Android
 
 			if (active.Count == 0)
 			{
+				// Only emit one-finger click if this lift was never part of multi-touch.
+				// (twoFingerDidPan / three-finger path already consumed the gesture.)
+				var wasMulti = twoFingerDidPan || twoFingerPanActive;
+				ResetMultiFingerState();
+
 				if (oneFingerMode == OneFingerMode.BoxSelect)
 				{
 					Enqueue(MouseInputEvent.Up, PrimaryButton(), new int2(x, y), 1);
@@ -529,7 +545,7 @@ namespace OpenRA.Platforms.Android
 				{
 					Enqueue(MouseInputEvent.Up, PanButton(scheme), lastPanLogical, 1);
 				}
-				else
+				else if (!wasMulti)
 				{
 					// No committed drag mode — tap or long-press click
 					var held = timeMs - pt.DownMs;
@@ -564,7 +580,6 @@ namespace OpenRA.Platforms.Android
 						lastTapMs = timeMs;
 						lastTapPos = loc;
 					}
-					// else: small aborted move after arming hold-pan with no drag — ignore
 				}
 
 				primary = default;
@@ -572,30 +587,78 @@ namespace OpenRA.Platforms.Android
 			}
 			else if (active.Count == 1)
 			{
+				// Remaining finger after multi-touch: re-base as a fresh one-finger contact
+				// so leftover DownMs / modes do not keep us stuck in pan/zoom paths.
+				var rem = active[0];
+				active[0] = new TouchPoint(rem.Id, rem.X, rem.Y, timeMs);
 				primary = active[0];
+				ResetOneFinger();
+				ResetMultiFingerState();
+				holdPanOrigin = new int2(rem.X, rem.Y);
+			}
+			else if (active.Count == 2)
+			{
+				// Dropped out of three-finger zoom into two-finger — restart pan baseline.
+				threeFingerZoomActive = false;
+				threeFingerAccumDy = 0;
+				twoFingerPanActive = false;
+				twoFingerDidPan = true; // do not treat remaining as a two-finger tap
+				twoFingerMaxMoved = 0;
+				twoFingerMid = Mid(active[0], active[1]);
+				twoFingerStartMid = twoFingerMid;
+				twoFingerStartMs = timeMs;
 			}
 		}
 
 		public void OnTouchCancel(int id)
 		{
+			// id < 0 means cancel entire gesture (MotionEvent.ACTION_CANCEL).
+			if (id < 0)
+			{
+				ForceEndAllGestures();
+				return;
+			}
+
 			var i = IndexOf(id);
 			if (i >= 0) active.RemoveAt(i);
 			if (active.Count == 0)
+				ForceEndAllGestures();
+			else if (active.Count == 1)
 			{
-				var scheme = CurrentScheme();
-				if (twoFingerPanActive)
-				{
-					Enqueue(MouseInputEvent.Up, PanButton(scheme), twoFingerMid, 1);
-					twoFingerPanActive = false;
-				}
-				threeFingerZoomActive = false;
-				if (oneFingerMode == OneFingerMode.BoxSelect)
-					Enqueue(MouseInputEvent.Up, PrimaryButton(), lastPointerLogical, 1);
-				else if (oneFingerMode == OneFingerMode.HoldPan)
-					Enqueue(MouseInputEvent.Up, PanButton(scheme), lastPanLogical, 1);
-				primary = default;
+				var rem = active[0];
+				active[0] = new TouchPoint(rem.Id, rem.X, rem.Y, rem.DownMs);
+				primary = active[0];
 				ResetOneFinger();
+				ResetMultiFingerState();
 			}
+			else if (active.Count == 2)
+			{
+				threeFingerZoomActive = false;
+				threeFingerAccumDy = 0;
+				twoFingerPanActive = false;
+				twoFingerDidPan = true;
+				twoFingerMid = Mid(active[0], active[1]);
+				twoFingerStartMid = twoFingerMid;
+			}
+		}
+
+		void ForceEndAllGestures()
+		{
+			var scheme = CurrentScheme();
+			if (twoFingerPanActive)
+			{
+				Enqueue(MouseInputEvent.Up, PanButton(scheme), twoFingerMid, 1);
+				twoFingerPanActive = false;
+			}
+			if (oneFingerMode == OneFingerMode.BoxSelect)
+				Enqueue(MouseInputEvent.Up, PrimaryButton(), lastPointerLogical, 1);
+			else if (oneFingerMode == OneFingerMode.HoldPan)
+				Enqueue(MouseInputEvent.Up, PanButton(scheme), lastPanLogical, 1);
+
+			active.Clear();
+			primary = default;
+			ResetOneFinger();
+			ResetMultiFingerState();
 		}
 
 		int CentroidY()

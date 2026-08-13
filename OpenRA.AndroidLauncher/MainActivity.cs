@@ -390,7 +390,8 @@ namespace OpenRA.Android
 					input.OnTouchUp(id, x, y, time);
 					break;
 				case MotionEventActions.Cancel:
-					input.OnTouchCancel(id);
+					// Whole gesture cancelled (palm rejection, etc.) — clear all contacts.
+					input.OnTouchCancel(-1);
 					break;
 			}
 
