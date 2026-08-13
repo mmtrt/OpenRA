@@ -15,16 +15,30 @@ namespace OpenRA.Android
 		public static string GlslDir => Path.Combine(SupportDir, "glsl");
 		public static string AssembliesDir => Path.Combine(SupportDir, "assemblies");
 
+		/// <summary>
+		/// True only after SupportDir is set, APK engine assets are extracted (or skipped as present),
+		/// and mod assemblies are staged for ObjectCreator. Engine must not start before this.
+		/// Manual game content (MIX files) can exist earlier — that alone is not enough.
+		/// </summary>
+		public static bool IsReady { get; private set; }
+
 		static bool extractedThisProcess;
 
 		public static void EnsureLayout(string preferredSupportDir = null)
 		{
+			IsReady = false;
 			try
 			{
 				EnsureLayoutCore(preferredSupportDir);
+				IsReady = SupportDir != null && HasAnyMod() && HasStagedModAssembly();
+				AndroidFileLog.Info("OpenRA.Content",
+					"EnsureLayout done ready=" + IsReady
+					+ " mods=" + HasAnyMod()
+					+ " assemblies=" + HasStagedModAssembly());
 			}
 			catch (Exception e)
 			{
+				IsReady = false;
 				AndroidFileLog.Exception("OpenRA.Content.EnsureLayout", e);
 			}
 		}
@@ -46,36 +60,44 @@ namespace OpenRA.Android
 			AndroidFileLog.Info("OpenRA.Content", "SupportDir=" + SupportDir);
 
 			var marker = Path.Combine(SupportDir, ".assets_extracted");
-			var needExtract = !File.Exists(marker) || !HasAnyMod();
+			var needExtract = !File.Exists(marker) || !HasAnyMod() || !HasStagedModAssembly();
 
 			if (needExtract && !extractedThisProcess)
 			{
 				extractedThisProcess = true;
-				AndroidFileLog.Info("OpenRA.Content", "Extracting APK assets (first time for this SupportDir)…");
+				AndroidFileLog.Info("OpenRA.Content", "Extracting APK engine assets (first time / incomplete)…");
+				// Order matters: assemblies + mods before any engine start. User MIX content is separate.
 				ExtractAssetsFolder("assemblies", AssembliesDir);
 				ExtractAssetsFolder("mods", ModsDir);
 				ExtractAssetsFolder("glsl", GlslDir);
+				// APK may ship a tiny Content/ placeholder — never block on it; do not wipe user files
+				// (TryCopyFile skips existing non-empty destinations).
 				ExtractAssetsFolder("Content", ContentDir);
-				// MIX filename hash database (silences debug.log unknown-hash warnings)
 				TryExtractRootFile("global mix database.dat", Path.Combine(SupportDir, "global mix database.dat"));
-				try { File.WriteAllText(marker, DateTime.UtcNow.ToString("o")); }
-				catch { /* ignore */ }
+				PlaceAssembliesForLoader();
+
+				if (HasAnyMod() && HasStagedModAssembly())
+				{
+					try { File.WriteAllText(marker, DateTime.UtcNow.ToString("o")); }
+					catch { /* ignore */ }
+					AndroidFileLog.Info("OpenRA.Content", "Asset extract complete — marker written");
+				}
+				else
+				{
+					AndroidFileLog.Warn("OpenRA.Content",
+						"Asset extract incomplete (mods=" + HasAnyMod()
+						+ " assemblies=" + HasStagedModAssembly()
+						+ ") — marker NOT written; will retry next launch");
+				}
 			}
 			else
 			{
 				AndroidFileLog.Info("OpenRA.Content", "Assets already present — skip full extract");
+				PlaceAssembliesForLoader();
 			}
 
-			PlaceAssembliesForLoader();
 			LogTree();
 		}
-
-
-
-
-
-		
-
 
 		static void TryExtractRootFile(string assetName, string destPath)
 		{
@@ -98,28 +120,28 @@ namespace OpenRA.Android
 
 		public static void PlaceAssembliesForLoader()
 		{
-			// Stage from Assets/assemblies → SupportDir root (where ObjectCreator loads),
-			// then remove the assemblies/ staging folder so we do not keep a dual tree.
+			// Stage from Assets/assemblies → SupportDir + BaseDirectory (ObjectCreator / BinDir).
 			var stage = AssembliesDir;
 			if (!Directory.Exists(stage))
-			{
-				// Also accept DLLs already extracted under SupportDir
 				stage = SupportDir;
-			}
 
 			string[] sources = Directory.Exists(AssembliesDir)
 				? Directory.GetFiles(AssembliesDir, "*.dll")
 				: Array.Empty<string>();
 
-			// ObjectCreator loads from Platform.BinDir (= AppDomain.BaseDirectory).
-			// Also keep copies under SupportDir for file probes / tooling.
+			// If staging was already cleared on a prior run, still ensure SupportDir DLLs exist in BinDir.
+			if (sources.Length == 0 && Directory.Exists(SupportDir))
+			{
+				sources = Directory.GetFiles(SupportDir, "OpenRA.Mods.*.dll");
+			}
+
 			var targets = new System.Collections.Generic.List<string> { SupportDir };
 			try
 			{
 				var bin = AppDomain.CurrentDomain.BaseDirectory;
 				if (!string.IsNullOrEmpty(bin))
 				{
-					var trimmed = bin.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+					var trimmed = bin.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 					if (!string.Equals(trimmed, SupportDir, StringComparison.Ordinal))
 						targets.Add(trimmed);
 				}
@@ -145,7 +167,6 @@ namespace OpenRA.Android
 				}
 			}
 
-			// Drop staging directory — game does not load from assemblies/
 			try
 			{
 				if (Directory.Exists(AssembliesDir))
@@ -222,6 +243,7 @@ namespace OpenRA.Android
 				var dir = Path.GetDirectoryName(destPath);
 				if (!string.IsNullOrEmpty(dir))
 					Directory.CreateDirectory(dir);
+				// Skip only if a complete file already exists (user MIX or prior extract).
 				if (File.Exists(destPath) && new FileInfo(destPath).Length > 0)
 					return;
 				using var input = assets.Open(assetPath);
@@ -233,10 +255,31 @@ namespace OpenRA.Android
 
 		public static bool HasAnyMod()
 		{
-			if (!Directory.Exists(ModsDir)) return false;
+			if (string.IsNullOrEmpty(SupportDir) || !Directory.Exists(ModsDir))
+				return false;
 			foreach (var d in Directory.GetDirectories(ModsDir))
 				if (File.Exists(Path.Combine(d, "mod.yaml")))
 					return true;
+			return false;
+		}
+
+		/// <summary>Mods.Common (or any Mods.*) available for load from SupportDir or BaseDirectory.</summary>
+		public static bool HasStagedModAssembly()
+		{
+			try
+			{
+				foreach (var dir in new[] { SupportDir, AppDomain.CurrentDomain.BaseDirectory, AssembliesDir })
+				{
+					if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+						continue;
+					if (File.Exists(Path.Combine(dir, "OpenRA.Mods.Common.dll")))
+						return true;
+					foreach (var f in Directory.EnumerateFiles(dir, "OpenRA.Mods.*.dll"))
+						if (new FileInfo(f).Length > 0)
+							return true;
+				}
+			}
+			catch { /* ignore */ }
 			return false;
 		}
 	}

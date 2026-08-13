@@ -55,9 +55,11 @@ namespace OpenRA.Android
 				Platform.AndroidCacheDir = CacheDir;
 				Game.PlatformFactory = () => new AndroidPlatform();
 
-				if (!ContentBootstrap.HasAnyMod())
+				if (!ContentBootstrap.IsReady || !ContentBootstrap.HasAnyMod())
 				{
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "No mod.yaml — not starting.");
+					AndroidFileLog.Warn("OpenRA.Bootstrap",
+						"Engine assets not ready (IsReady=" + ContentBootstrap.IsReady
+						+ " HasMod=" + ContentBootstrap.HasAnyMod() + ") — not starting.");
 					return;
 				}
 

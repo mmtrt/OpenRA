@@ -88,8 +88,10 @@ namespace OpenRA.Android
 					{
 						try
 						{
+							// Content MIX alone is not enough: first run must finish APK extract
+							// (mods + assemblies) or the engine crashes; second launch then works.
 							if (installView == null
-							    && !string.IsNullOrEmpty(ContentBootstrap.SupportDir)
+							    && ContentBootstrap.IsReady
 							    && ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
 								TryStartEngine();
 						}
@@ -268,6 +270,12 @@ namespace OpenRA.Android
 		{
 			if (engineStartRequested)
 				return;
+			if (!ContentBootstrap.IsReady)
+			{
+				AndroidFileLog.Warn("OpenRA.Main", "TryStartEngine deferred — ContentBootstrap not ready");
+				statusOverlay.Text = "Preparing engine assets…";
+				return;
+			}
 			if (!ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))
 			{
 				ShowInstallUi();
