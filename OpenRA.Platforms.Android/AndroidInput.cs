@@ -54,6 +54,7 @@ namespace OpenRA.Platforms.Android
 		bool threeFingerZoomActive;
 		int threeFingerLastY;
 		int threeFingerAccumDy;
+		long lastZoomSampleMs = -1; // only sample centroid once per MotionEvent
 
 		long lastTapMs;
 		int2 lastTapPos;
@@ -324,6 +325,7 @@ namespace OpenRA.Platforms.Android
 			threeFingerZoomActive = false;
 			threeFingerLastY = 0;
 			threeFingerAccumDy = 0;
+			lastZoomSampleMs = -1;
 		}
 
 		public void OnTouchDown(int id, int x, int y, long timeMs)
@@ -370,17 +372,20 @@ namespace OpenRA.Platforms.Android
 			}
 			else if (active.Count >= 3)
 			{
-				// Third finger: end any two-finger pan, start three-finger zoom tracking.
+				// Third+ finger: end any two-finger pan, arm three-finger zoom.
+				// Works for both sequential (1→2→3) and near-simultaneous chord downs.
 				var scheme = CurrentScheme();
 				if (twoFingerPanActive)
 				{
 					Enqueue(MouseInputEvent.Up, PanButton(scheme), twoFingerMid, 1);
 					twoFingerPanActive = false;
 				}
+				twoFingerPanActive = false;
 				twoFingerDidPan = true; // suppress two-finger tap if third finger joined
 				threeFingerZoomActive = true;
 				threeFingerLastY = CentroidY();
 				threeFingerAccumDy = 0;
+				lastZoomSampleMs = -1; // next MOVE establishes a clean baseline
 			}
 		}
 
@@ -390,7 +395,18 @@ namespace OpenRA.Platforms.Android
 			lastPointerLogical = new int2(x, y);
 			var i = IndexOf(id);
 			if (i < 0)
-				return;
+			{
+				// Simultaneous 3-finger chords sometimes deliver MOVE before every POINTER_DOWN
+				// is processed. Adopt the contact so zoom can still arm.
+				if (active.Count >= 3)
+					return;
+				active.Add(new TouchPoint(id, x, y, timeMs));
+				while (active.Count > 3)
+					active.RemoveAt(0);
+				i = IndexOf(id);
+				if (i < 0)
+					return;
+			}
 
 			active[i] = new TouchPoint(id, x, y, active[i].DownMs);
 			var scheme = CurrentScheme();
@@ -474,8 +490,29 @@ namespace OpenRA.Platforms.Android
 					twoFingerMid = mid;
 				}
 			}
-			else if (active.Count >= 3 && threeFingerZoomActive)
+			else if (active.Count >= 3)
 			{
+				// Arm even if chord was placed in one frame (MOVE before/without a clean 3rd Down path).
+				if (!threeFingerZoomActive)
+				{
+					if (twoFingerPanActive)
+					{
+						Enqueue(MouseInputEvent.Up, PanButton(CurrentScheme()), twoFingerMid, 1);
+						twoFingerPanActive = false;
+					}
+					twoFingerDidPan = true;
+					threeFingerZoomActive = true;
+					threeFingerLastY = CentroidY();
+					threeFingerAccumDy = 0;
+					lastZoomSampleMs = timeMs;
+					return;
+				}
+
+				// MainActivity calls OnTouchMove once per pointer; only sample centroid once per event.
+				if (timeMs == lastZoomSampleMs)
+					return;
+				lastZoomSampleMs = timeMs;
+
 				// Three-finger vertical swipe: up → zoom in, down → zoom out
 				var cy = CentroidY();
 				var dy = cy - threeFingerLastY; // +dy = fingers moved down on screen
@@ -484,13 +521,11 @@ namespace OpenRA.Platforms.Android
 
 				while (threeFingerAccumDy <= -ThreeFingerZoomStep)
 				{
-					// Swipe up → zoom in
 					lock (queueLock) zoomQueue.Enqueue(ThreeFingerZoomRatioIn);
 					threeFingerAccumDy += ThreeFingerZoomStep;
 				}
 				while (threeFingerAccumDy >= ThreeFingerZoomStep)
 				{
-					// Swipe down → zoom out
 					lock (queueLock) zoomQueue.Enqueue(ThreeFingerZoomRatioOut);
 					threeFingerAccumDy -= ThreeFingerZoomStep;
 				}
