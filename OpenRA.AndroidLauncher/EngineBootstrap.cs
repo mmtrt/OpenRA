@@ -270,6 +270,8 @@ namespace OpenRA.Android
 			catch (Exception e)
 			{
 				AndroidFileLog.Exception("OpenRA.Bootstrap", e);
+				try { CrashReporter.Report("Game.InitializeAndRun", e); }
+				catch { /* ignore */ }
 			}
 			finally
 			{
@@ -855,12 +857,7 @@ namespace OpenRA.Android
 			try
 			{
 				var ex = args.ExceptionObject as Exception;
-				var text = ex != null
-					? ex.ToString()
-					: (args.ExceptionObject != null ? args.ExceptionObject.ToString() : "unknown");
-				var line = "UnhandledException isTerminating=" + args.IsTerminating + " " + text;
-				try { Log.Write("debug", line); } catch { /* ignore */ }
-				AndroidPlatformLog.Error("OpenRA.Crash", line);
+				CrashReporter.Report("EngineBootstrap.OnUnhandled", ex, args.IsTerminating);
 				AndroidFileLog.Flush();
 			}
 			catch { /* last resort */ }

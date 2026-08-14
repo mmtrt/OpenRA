@@ -1,5 +1,5 @@
 // Custom Application — earliest process hooks.
-// Uses BootLog only (no OpenRA.Game types) so ClassNotFound / early failures still leave a file.
+// Uses BootLog + CrashReporter only (no OpenRA.Game types) so early failures still leave a file.
 
 using System;
 using System.Threading.Tasks;
@@ -32,11 +32,7 @@ namespace OpenRA.Android
 					try
 					{
 						var ex = args.ExceptionObject as Exception;
-						var text = ex != null
-							? ex.ToString()
-							: (args.ExceptionObject != null ? args.ExceptionObject.ToString() : "unknown");
-						BootLog.Error("UnhandledException isTerminating=" + args.IsTerminating + " " + text);
-						AndroidPlatformLog.Error("OpenRA.Crash", text);
+						CrashReporter.Report("AppDomain.UnhandledException", ex, args.IsTerminating);
 					}
 					catch { /* ignore */ }
 				};
@@ -45,7 +41,7 @@ namespace OpenRA.Android
 				{
 					try
 					{
-						BootLog.Error("UnobservedTaskException " + args.Exception);
+						CrashReporter.Report("TaskScheduler.UnobservedTaskException", args.Exception);
 						args.SetObserved();
 					}
 					catch { /* ignore */ }
@@ -55,12 +51,13 @@ namespace OpenRA.Android
 				{
 					try
 					{
-						BootLog.Error("AndroidEnvironment exception " + args.Exception);
+						CrashReporter.Report("AndroidEnvironment.UnhandledExceptionRaiser", args.Exception);
+						// Keep default handling so process can still terminate cleanly
 					}
 					catch { /* ignore */ }
 				};
 
-				BootLog.Info("Crash hooks installed");
+				BootLog.Info("Crash hooks installed → Logs/crash.log under package data dir");
 			}
 			catch (Exception e)
 			{
@@ -75,7 +72,6 @@ namespace OpenRA.Android
 			try
 			{
 				BootLog.Info("OnTrimMemory " + level);
-				// Only heavy GC on serious pressure — avoid hitching during play on moderate levels
 				if (level == TrimMemory.RunningCritical || level == TrimMemory.Complete
 				    || level == TrimMemory.Moderate || level == TrimMemory.RunningLow)
 				{
