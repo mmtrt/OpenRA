@@ -2,6 +2,7 @@
 
 using System;
 using System.IO;
+using System.Reflection;
 using Android.App;
 using Android.Content.Res;
 
@@ -58,9 +59,16 @@ namespace OpenRA.Android
 			Directory.CreateDirectory(Path.Combine(SupportDir, "Cache"));
 
 			AndroidFileLog.Info("OpenRA.Content", "SupportDir=" + SupportDir);
+			EnsureCompileInMarker();
 
 			var marker = Path.Combine(SupportDir, ".assets_extracted");
-			var needExtract = !File.Exists(marker) || !HasAnyMod() || !HasStagedModAssembly();
+			// Assemblies: compile-in APK does not need Assets/assemblies extract.
+			var needExtract = !File.Exists(marker) || !HasAnyMod() || EngineAssetsLookStale();
+			if (!HasStagedModAssembly())
+			{
+				// Still try extract once for legacy APKs that ship DLLs in Assets
+				needExtract = true;
+			}
 
 			// Engine assets (mods/chrome/fluent, glsl, assemblies) must refresh from APK when
 			// incomplete OR when chrome/fluent lack Touch keys (old extract left stale files —
@@ -297,11 +305,19 @@ namespace OpenRA.Android
 			return false;
 		}
 
-		/// <summary>Mods.Common (or any Mods.*) available for load from SupportDir or BaseDirectory.</summary>
+		/// <summary>
+		/// True when Mods.Common (etc.) can be resolved — either already loaded, on disk,
+		/// or compile-in APK (ProjectReference / Assets/assemblies/.compile_in).
+		/// </summary>
 		public static bool HasStagedModAssembly()
 		{
 			try
 			{
+				// Compile-in: package script leaves this marker and does not ship DLLs under Assets.
+				if (!string.IsNullOrEmpty(AssembliesDir)
+				    && File.Exists(Path.Combine(AssembliesDir, ".compile_in")))
+					return true;
+
 				foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
 				{
 					try
@@ -312,6 +328,16 @@ namespace OpenRA.Android
 					}
 					catch { /* ignore */ }
 				}
+
+				// ProjectReferenced into APK — try load by simple name (no disk path needed).
+				try
+				{
+					var loaded = Assembly.Load("OpenRA.Mods.Common");
+					if (loaded != null)
+						return true;
+				}
+				catch { /* not in this ALC yet */ }
+
 				foreach (var dir in new[] { SupportDir, AppDomain.CurrentDomain.BaseDirectory, AssembliesDir })
 				{
 					if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
@@ -325,6 +351,21 @@ namespace OpenRA.Android
 			}
 			catch { /* ignore */ }
 			return false;
+		}
+
+		/// <summary>Write compile-in marker so IsReady does not wait for disk Mods DLLs.</summary>
+		public static void EnsureCompileInMarker()
+		{
+			try
+			{
+				if (string.IsNullOrEmpty(AssembliesDir))
+					return;
+				Directory.CreateDirectory(AssembliesDir);
+				var marker = Path.Combine(AssembliesDir, ".compile_in");
+				if (!File.Exists(marker))
+					File.WriteAllText(marker, "1");
+			}
+			catch { /* ignore */ }
 		}
 	}
 }

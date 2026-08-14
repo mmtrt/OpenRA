@@ -272,8 +272,36 @@ namespace OpenRA.Android
 				return;
 			if (!ContentBootstrap.IsReady)
 			{
-				AndroidFileLog.Warn("OpenRA.Main", "TryStartEngine deferred — ContentBootstrap not ready");
-				statusOverlay.Text = "Preparing engine assets…";
+				// Compile-in: assemblies may only become "staged" after marker / Load.
+				try
+				{
+					ContentBootstrap.EnsureCompileInMarker();
+					ContentBootstrap.EnsureLayout(ContentBootstrap.SupportDir);
+				}
+				catch (Exception e)
+				{
+					AndroidFileLog.Warn("OpenRA.Main", "EnsureLayout retry: " + e.Message);
+				}
+			}
+			if (!ContentBootstrap.IsReady)
+			{
+				AndroidFileLog.Warn("OpenRA.Main",
+					"TryStartEngine deferred — ready=" + ContentBootstrap.IsReady
+					+ " mods=" + ContentBootstrap.HasAnyMod()
+					+ " asm=" + ContentBootstrap.HasStagedModAssembly());
+				statusOverlay.Text = "Preparing engine assets…
+mods=" + ContentBootstrap.HasAnyMod()
+					+ " asm=" + ContentBootstrap.HasStagedModAssembly();
+				// Retry shortly — first launch extract can finish after first surface frame
+				try
+				{
+					statusOverlay.PostDelayed(() =>
+					{
+						try { if (!engineStartRequested) TryStartEngine(); }
+						catch { /* ignore */ }
+					}, 750);
+				}
+				catch { /* ignore */ }
 				return;
 			}
 			if (!ContentProbe.IsBaseContentInstalled(ContentBootstrap.SupportDir))

@@ -1,6 +1,7 @@
 // Ultra-early boot log. Never references OpenRA.Game / OpenRA.Log.
 // Survives crashes that happen before SupportDir + official Log channels exist.
-// File: Context.FilesDir/boot.log  and  external files OpenRA/Logs/boot.log
+// Path matches StorageAccess SupportDir: …/Android/data/<pkg>/Logs/boot.log
+// (not the legacy …/files/OpenRA/Logs/ path).
 
 using System;
 using System.IO;
@@ -28,22 +29,7 @@ namespace OpenRA.Android
 
 				try
 				{
-					var ctx = Application.Context;
-					// Prefer external app files (user can pull without root)
-					string dir = null;
-					try
-					{
-						dir = ctx.GetExternalFilesDir(null)?.AbsolutePath;
-						if (!string.IsNullOrEmpty(dir))
-							dir = System.IO.Path.Combine(dir, "OpenRA", "Logs");
-					}
-					catch { /* ignore */ }
-
-					if (string.IsNullOrEmpty(dir))
-					{
-						dir = System.IO.Path.Combine(ctx.FilesDir.AbsolutePath, "OpenRA", "Logs");
-					}
-
+					var dir = ResolveLogsDir();
 					Directory.CreateDirectory(dir);
 					Path = System.IO.Path.Combine(dir, "boot.log");
 					writer = new StreamWriter(new FileStream(Path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite), Encoding.UTF8)
@@ -58,6 +44,51 @@ namespace OpenRA.Android
 					catch { /* ignore */ }
 				}
 			}
+		}
+
+		/// <summary>
+		/// Same root as StorageAccess.ResolveSupportDir: package external data dir
+		/// (parent of GetExternalFilesDir), then Logs/. Fallback: internal files parent/Logs.
+		/// </summary>
+		static string ResolveLogsDir()
+		{
+			var ctx = Application.Context;
+
+			// Prefer already-locked SupportDir when bootstrap has run.
+			try
+			{
+				var support = ContentBootstrap.SupportDir;
+				if (!string.IsNullOrEmpty(support))
+					return System.IO.Path.Combine(support, "Logs");
+			}
+			catch { /* type init order */ }
+
+			try
+			{
+				var filesDir = ctx.GetExternalFilesDir(null)?.AbsolutePath;
+				if (!string.IsNullOrEmpty(filesDir))
+				{
+					var parent = Directory.GetParent(filesDir)?.FullName;
+					if (!string.IsNullOrEmpty(parent))
+						return System.IO.Path.Combine(parent, "Logs");
+				}
+			}
+			catch { /* ignore */ }
+
+			try
+			{
+				var internalFiles = ctx.FilesDir?.AbsolutePath;
+				if (!string.IsNullOrEmpty(internalFiles))
+				{
+					var parent = Directory.GetParent(internalFiles)?.FullName;
+					if (!string.IsNullOrEmpty(parent))
+						return System.IO.Path.Combine(parent, "Logs");
+				}
+			}
+			catch { /* ignore */ }
+
+			// Last resort — still not files/OpenRA
+			return System.IO.Path.Combine(ctx.FilesDir.AbsolutePath, "Logs");
 		}
 
 		public static void Info(string msg) => Write("INFO", msg);
