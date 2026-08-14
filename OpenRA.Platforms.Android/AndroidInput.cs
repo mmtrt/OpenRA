@@ -323,9 +323,23 @@ namespace OpenRA.Platforms.Android
 			twoFingerMid = default;
 			twoFingerStartMid = default;
 			twoFingerStartMs = 0;
+			DisarmThreeFingerZoom();
+		}
+
+		void DisarmThreeFingerZoom()
+		{
 			threeFingerZoomActive = false;
 			threeFingerLastY = 0;
 			threeFingerAccumDy = 0;
+			lastZoomSampleMs = -1;
+		}
+
+		void ArmThreeFingerZoom()
+		{
+			threeFingerZoomActive = true;
+			threeFingerLastY = active.Count > 0 ? CentroidY() : 0;
+			threeFingerAccumDy = 0;
+			// Do NOT stamp lastZoomSampleMs — first MOVE must be allowed to sample.
 			lastZoomSampleMs = -1;
 		}
 
@@ -370,11 +384,12 @@ namespace OpenRA.Platforms.Android
 				twoFingerStartMs = timeMs;
 				threeFingerZoomActive = false;
 				threeFingerAccumDy = 0;
+				threeFingerLastY = 0;
+				lastZoomSampleMs = -1;
 			}
 			else if (active.Count >= 3)
 			{
 				// Third+ finger: end any two-finger pan, arm three-finger zoom.
-				// Works for both sequential (1→2→3) and near-simultaneous chord downs.
 				var scheme = CurrentScheme();
 				if (twoFingerPanActive)
 				{
@@ -382,11 +397,8 @@ namespace OpenRA.Platforms.Android
 					twoFingerPanActive = false;
 				}
 				twoFingerPanActive = false;
-				twoFingerDidPan = true; // suppress two-finger tap if third finger joined
-				threeFingerZoomActive = true;
-				threeFingerLastY = CentroidY();
-				threeFingerAccumDy = 0;
-				lastZoomSampleMs = -1; // next MOVE establishes a clean baseline
+				twoFingerDidPan = true;
+				ArmThreeFingerZoom();
 			}
 		}
 
@@ -524,20 +536,27 @@ namespace OpenRA.Platforms.Android
 
 				if (!threeFingerZoomActive)
 				{
-					threeFingerZoomActive = true;
-					threeFingerLastY = CentroidY();
-					threeFingerAccumDy = 0;
-					lastZoomSampleMs = timeMs;
+					ArmThreeFingerZoom();
+					// Baseline only this frame — apply dy on subsequent MOVE events.
 					return;
 				}
 
-				// One centroid sample per MotionEvent time (batch ProcessGestures once per event).
-				if (timeMs == lastZoomSampleMs)
+				// ProcessGestures is invoked once per MotionEvent; skip only true duplicates.
+				if (timeMs != -1 && timeMs == lastZoomSampleMs)
 					return;
 				lastZoomSampleMs = timeMs;
 
 				var cy = CentroidY();
 				var dy = cy - threeFingerLastY;
+
+				// Large jump = finger lifted/replaced mid-chord — re-baseline, do not zoom.
+				if (Math.Abs(dy) > ThreeFingerZoomStep * 8)
+				{
+					threeFingerLastY = cy;
+					threeFingerAccumDy = 0;
+					return;
+				}
+
 				threeFingerLastY = cy;
 				threeFingerAccumDy += dy;
 
@@ -553,6 +572,12 @@ namespace OpenRA.Platforms.Android
 						zoomQueue.Enqueue(ThreeFingerZoomRatioOut);
 					threeFingerAccumDy -= ThreeFingerZoomStep;
 				}
+			}
+			else
+			{
+				// 0 fingers handled elsewhere; if we drop below 3 without Up (driver quirk), disarm.
+				if (threeFingerZoomActive && active.Count < 3)
+					DisarmThreeFingerZoom();
 			}
 		}
 
@@ -577,9 +602,9 @@ namespace OpenRA.Platforms.Android
 			active.RemoveAt(i);
 			var scheme = CurrentScheme();
 
-			// Leaving 3-finger zoom
+			// Leaving 3-finger zoom — full disarm so the next chord can arm cleanly
 			if (active.Count < 3)
-				threeFingerZoomActive = false;
+				DisarmThreeFingerZoom();
 
 			// Leaving two-finger: either end pan or fire two-finger tap = right-click/cancel
 			if (active.Count < 2)
@@ -671,8 +696,7 @@ namespace OpenRA.Platforms.Android
 			else if (active.Count == 2)
 			{
 				// Dropped out of three-finger zoom into two-finger — restart pan baseline.
-				threeFingerZoomActive = false;
-				threeFingerAccumDy = 0;
+				DisarmThreeFingerZoom();
 				twoFingerPanActive = false;
 				twoFingerDidPan = true; // do not treat remaining as a two-finger tap
 				twoFingerMaxMoved = 0;
@@ -705,8 +729,7 @@ namespace OpenRA.Platforms.Android
 			}
 			else if (active.Count == 2)
 			{
-				threeFingerZoomActive = false;
-				threeFingerAccumDy = 0;
+				DisarmThreeFingerZoom();
 				twoFingerPanActive = false;
 				twoFingerDidPan = true;
 				twoFingerMid = Mid(active[0], active[1]);
