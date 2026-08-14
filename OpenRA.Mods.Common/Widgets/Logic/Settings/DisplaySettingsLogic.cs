@@ -582,7 +582,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var maxScale = Math.Min(maxScales.X, maxScales.Y);
 
 			// Phones are wide but short; height-based maxScale alone caps near 1.5 (e.g. 1080/720).
-			// Always raise the ceiling on Android so 1.75–2.5 remain selectable AND loadable.
+			// Always raise the ceiling on Android so 1.85–2.5 remain selectable AND loadable.
 			var isAndroid =
 #if ANDROID
 				true;
@@ -599,10 +599,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				else if (Game.Renderer.NativeResolution.Width >= 1280)
 					maxScale = Math.Max(maxScale, 2.0f);
 				else
-					maxScale = Math.Max(maxScale, 1.75f);
+					maxScale = Math.Max(maxScale, 1.85f);
 			}
 
-			var validScales = new[] { 1f, 1.25f, 1.5f, 1.75f, 2f, 2.25f, 2.5f }.Where(x => x <= maxScale + 0.001f);
+			var validScales = new[] { 1f, 1.25f, 1.5f, 1.75f, 1.85f, 2f, 2.25f, 2.5f }.Where(x => x <= maxScale + 0.001f);
 			dropdown.ShowDropDown("LABEL_DROPDOWN_TEMPLATE", 500, validScales, SetupItem);
 		}
 	}

@@ -275,7 +275,7 @@ namespace OpenRA.Android
 			var chosen = Math.Max(fromYaml, fromPin);
 			// First-run default when neither yaml nor pin has a value yet
 			if (chosen <= 1.0001f && fromYaml <= 1.0001f && fromPin <= 1.0001f)
-				return 1.75f;
+				return 1.85f;
 			return chosen;
 		}
 
@@ -504,7 +504,7 @@ namespace OpenRA.Android
 					tab + "DisableHardwareCursors: true" + nl +
 					tab + "CursorDouble: true" + nl +
 					tab + "GLProfile: Embedded" + nl +
-					tab + "UIScale: 1.75" + nl +
+					tab + "UIScale: 1.85" + nl +
 					tab + "ViewportDistance: Close" + nl +
 					tab + "VSync: true" + nl +
 					"Sound:" + nl +
@@ -514,8 +514,8 @@ namespace OpenRA.Android
 					tab + "TargetLines: Automatic" + nl;
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
-					"Seeded settings.yaml PseudoFullscreen + CursorDouble + TargetLines Automatic + Touch + UIScale 1.75 " + w + "x" + h);
-				WritePinnedUIScale(supportDir, 1.75f);
+					"Seeded settings.yaml PseudoFullscreen + CursorDouble + TargetLines Automatic + Touch + UIScale 1.85 " + w + "x" + h);
+				WritePinnedUIScale(supportDir, 1.85f);
 			}
 			catch (Exception e)
 			{
