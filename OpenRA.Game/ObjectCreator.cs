@@ -91,4 +91,5 @@ namespace OpenRA
 
 			assemblyList.Add(assembly);
 		}
+	}
 }
