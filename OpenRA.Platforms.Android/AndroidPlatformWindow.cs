@@ -135,11 +135,13 @@ namespace OpenRA.Platforms.Android
 
 				foreach (var z in input.DrainZoom())
 				{
-					// Pinch zoom → wheel at last known pointer (menus need a location over the panel)
+					// Map ratio markers to discrete mouse-wheel ticks (Viewport AdjustZoom).
+					// Positive Delta.Y = zoom in when ZoomModifier is None (default).
 					var loc = input.LastPointerLogical;
+					var wheel = z >= 1f ? 120 : -120;
 					inputHandler.OnMouseInput(new MouseInput(
 						MouseInputEvent.Scroll, MouseButton.None,
-						loc, new int2(0, (int)((z - 1f) * 120)), Modifiers.None, 0));
+						loc, new int2(0, wheel), Modifiers.None, 0));
 				}
 
 				foreach (var (loc, delta) in input.DrainScroll())

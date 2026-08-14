@@ -409,8 +409,10 @@ namespace OpenRA.Android
 					input.OnTouchDown(id, x, y, time);
 					break;
 				case MotionEventActions.Move:
+					// Update every contact first, then one gesture pass (critical for 3-finger zoom).
 					for (var i = 0; i < e.PointerCount; i++)
-						input.OnTouchMove(e.GetPointerId(i), (int)e.GetX(i), (int)e.GetY(i), time);
+					input.UpdatePointerPosition(e.GetPointerId(i), (int)e.GetX(i), (int)e.GetY(i), time);
+					input.ProcessGestures(time);
 					break;
 				case MotionEventActions.Up:
 				case MotionEventActions.PointerUp:

@@ -72,10 +72,11 @@ namespace OpenRA.Platforms.Android
 		/// <summary>Max midpoint travel for a two-finger gesture to count as a tap (right-click).</summary>
 		const int TwoFingerTapSlop = 36;
 		const int TwoFingerTapMaxMs = 400;
-		/// <summary>Vertical travel (px) of 3-finger centroid per zoom step.</summary>
-		const int ThreeFingerZoomStep = 28;
-		const float ThreeFingerZoomRatioIn = 1.15f;
-		const float ThreeFingerZoomRatioOut = 1f / 1.15f;
+		/// <summary>Vertical travel (px) of 3-finger centroid per zoom step (logical px).</summary>
+		const int ThreeFingerZoomStep = 18;
+		/// <summary>Queue markers only — PlatformWindow maps these to ±120 wheel ticks.</summary>
+		const float ThreeFingerZoomRatioIn = 1.25f;
+		const float ThreeFingerZoomRatioOut = 0.8f;
 
 		readonly object queueLock = new();
 		// Reused drain buffers (PumpInput only foreach's within the same call).
@@ -389,60 +390,83 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
-		public void OnTouchMove(int id, int x, int y, long timeMs)
+		/// <summary>
+		/// Update a pointer's logical position only (no gesture). Used when MainActivity
+		/// refreshes all contacts in one MotionEvent before ProcessGestures.
+		/// </summary>
+		public void UpdatePointerPosition(int id, int x, int y, long timeMs)
 		{
 			ToLogical(ref x, ref y);
 			lastPointerLogical = new int2(x, y);
 			var i = IndexOf(id);
 			if (i < 0)
 			{
-				// Simultaneous 3-finger chords sometimes deliver MOVE before every POINTER_DOWN
-				// is processed. Adopt the contact so zoom can still arm.
-				if (active.Count >= 3)
-					return;
+				// Simultaneous 3-finger: MOVE may arrive before POINTER_DOWN for every id.
 				active.Add(new TouchPoint(id, x, y, timeMs));
 				while (active.Count > 3)
 					active.RemoveAt(0);
-				i = IndexOf(id);
-				if (i < 0)
-					return;
+				return;
 			}
-
 			active[i] = new TouchPoint(id, x, y, active[i].DownMs);
-			var scheme = CurrentScheme();
+		}
 
-			if (active.Count == 1 && primary.Id == id)
+		/// <summary>Run gesture recognition once after all pointer positions for a frame are updated.</summary>
+		public void ProcessGestures(long timeMs)
+		{
+			var scheme = CurrentScheme();
+			ProcessGesturesCore(scheme, timeMs);
+		}
+
+		public void OnTouchMove(int id, int x, int y, long timeMs)
+		{
+			// Legacy single-call path: update then process (MainActivity multi-touch uses batch APIs).
+			UpdatePointerPosition(id, x, y, timeMs);
+			ProcessGestures(timeMs);
+		}
+
+		void ProcessGesturesCore(Scheme scheme, long timeMs)
+		{
+			if (active.Count == 1)
 			{
+				var pt = active[0];
+				if (primary.Id != pt.Id)
+					primary = pt;
+
+				var x = pt.X;
+				var y = pt.Y;
 				var dx = x - primary.X;
 				var dy = y - primary.Y;
+				// primary stores DOWN position — use holdPanOrigin / Down coords for one-finger start
+				var startX = primary.X;
+				var startY = primary.Y;
+				// TouchPoint primary is updated on move only through active[0]; keep down pos from DownMs point.
+				// Re-read start from the stored primary at down — we overwrite active[0] on move so primary
+				// fields X/Y are current. Use holdPanOrigin for start when in None/arming.
+				var origin = holdPanOrigin;
+				dx = x - origin.X;
+				dy = y - origin.Y;
 				var moved = Math.Abs(dx) + Math.Abs(dy);
 				var held = timeMs - primary.DownMs;
 
 				if (oneFingerMode == OneFingerMode.None)
 				{
-					// Quick drag past BoxSlop before hold delay → box select
 					if (moved > BoxSlop && held < HoldPanMs)
 					{
 						oneFingerMode = OneFingerMode.BoxSelect;
-						Enqueue(MouseInputEvent.Down, PrimaryButton(), new int2(primary.X, primary.Y), 1);
+						Enqueue(MouseInputEvent.Down, PrimaryButton(), origin, 1);
 						Enqueue(MouseInputEvent.Move, PrimaryButton(), new int2(x, y), 1);
 					}
-					// Stationary long enough → arm hold-pan (VanillaRA)
 					else if (held >= HoldPanMs && moved <= TapSlop)
 					{
 						holdPanArmed = true;
-						holdPanOrigin = new int2(x, y);
 					}
-					// Armed and started moving → commit pan
 					else if (holdPanArmed && moved > PanSlop)
 					{
 						oneFingerMode = OneFingerMode.HoldPan;
 						holdPanArmed = false;
-						lastPanLogical = holdPanOrigin;
-						Enqueue(MouseInputEvent.Down, PanButton(scheme), holdPanOrigin, 1);
-						var mdx = x - holdPanOrigin.X;
-						var mdy = y - holdPanOrigin.Y;
-						EnqueuePanMove(scheme, new int2(x, y), mdx, mdy);
+						lastPanLogical = origin;
+						Enqueue(MouseInputEvent.Down, PanButton(scheme), origin, 1);
+						EnqueuePanMove(scheme, new int2(x, y), x - origin.X, y - origin.Y);
 						lastPanLogical = new int2(x, y);
 					}
 				}
@@ -472,7 +496,6 @@ namespace OpenRA.Platforms.Android
 				var mdy = mid.Y - twoFingerMid.Y;
 				var step = Math.Abs(mdx) + Math.Abs(mdy);
 
-				// Commit pan once midpoint moves past tap slop
 				if (!twoFingerPanActive && twoFingerMaxMoved > TwoFingerTapSlop)
 				{
 					twoFingerPanActive = true;
@@ -485,22 +508,22 @@ namespace OpenRA.Platforms.Android
 
 				if (twoFingerPanActive && step >= PanSlop)
 				{
-					// Pan only — do NOT emit Scroll here (OpenRA treats vertical scroll as zoom).
 					EnqueuePanMove(scheme, mid, mdx, mdy);
 					twoFingerMid = mid;
 				}
 			}
 			else if (active.Count >= 3)
 			{
-				// Arm even if chord was placed in one frame (MOVE before/without a clean 3rd Down path).
+				// Cancel two-finger pan so it cannot steal the gesture.
+				if (twoFingerPanActive)
+				{
+					Enqueue(MouseInputEvent.Up, PanButton(scheme), twoFingerMid, 1);
+					twoFingerPanActive = false;
+				}
+				twoFingerDidPan = true;
+
 				if (!threeFingerZoomActive)
 				{
-					if (twoFingerPanActive)
-					{
-						Enqueue(MouseInputEvent.Up, PanButton(CurrentScheme()), twoFingerMid, 1);
-						twoFingerPanActive = false;
-					}
-					twoFingerDidPan = true;
 					threeFingerZoomActive = true;
 					threeFingerLastY = CentroidY();
 					threeFingerAccumDy = 0;
@@ -508,25 +531,26 @@ namespace OpenRA.Platforms.Android
 					return;
 				}
 
-				// MainActivity calls OnTouchMove once per pointer; only sample centroid once per event.
+				// One centroid sample per MotionEvent time (batch ProcessGestures once per event).
 				if (timeMs == lastZoomSampleMs)
 					return;
 				lastZoomSampleMs = timeMs;
 
-				// Three-finger vertical swipe: up → zoom in, down → zoom out
 				var cy = CentroidY();
-				var dy = cy - threeFingerLastY; // +dy = fingers moved down on screen
+				var dy = cy - threeFingerLastY;
 				threeFingerLastY = cy;
 				threeFingerAccumDy += dy;
 
 				while (threeFingerAccumDy <= -ThreeFingerZoomStep)
 				{
-					lock (queueLock) zoomQueue.Enqueue(ThreeFingerZoomRatioIn);
+					lock (queueLock)
+						zoomQueue.Enqueue(ThreeFingerZoomRatioIn);
 					threeFingerAccumDy += ThreeFingerZoomStep;
 				}
 				while (threeFingerAccumDy >= ThreeFingerZoomStep)
 				{
-					lock (queueLock) zoomQueue.Enqueue(ThreeFingerZoomRatioOut);
+					lock (queueLock)
+						zoomQueue.Enqueue(ThreeFingerZoomRatioOut);
 					threeFingerAccumDy -= ThreeFingerZoomStep;
 				}
 			}
