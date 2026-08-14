@@ -428,9 +428,40 @@ namespace OpenRA.Platforms.Android
 			live?.EnsureVaoBound();
 		}
 
+		static int loggedPrimitiveViewport;
+
 		public void DrawPrimitives(PrimitiveType pt, int firstVertex, int numVertices)
 		{
 			EnsureVaoBound();
+
+			// Targeted diagnostic: query the ACTUAL GL_VIEWPORT/GL_SCISSOR_BOX/framebuffer
+			// binding at the exact moment a small (likely full-screen-effect) quad draws.
+			// DrawBatch's own logging (Renderer.cs) confirmed the vertex count/offset
+			// reaching this call are correct (first=0, n=6) for the post-process tint quad,
+			// which rules out a missing-triangle/vertex-count bug — so if the quad still
+			// doesn't cover the full screen, the remaining explanation is that GL_VIEWPORT
+			// itself is smaller than the actual render target at draw time (leftover from
+			// an earlier, unrelated glViewport/scissor call), which would make the NDC
+			// -1..1 quad only fill that smaller region rather than the whole target.
+			if (numVertices <= 6 && loggedPrimitiveViewport < 12)
+			{
+				loggedPrimitiveViewport++;
+				var vp = new int[4];
+				GLES20.GlGetIntegerv(0x0BA2 /* GL_VIEWPORT */, vp, 0);
+				var scOn = new int[1];
+				GLES20.GlGetIntegerv(0x0C11 /* GL_SCISSOR_TEST */, scOn, 0);
+				var sc = new int[4];
+				GLES20.GlGetIntegerv(0x0C10 /* GL_SCISSOR_BOX */, sc, 0);
+				var fb = new int[1];
+				GLES20.GlGetIntegerv(0x8CA6 /* GL_FRAMEBUFFER_BINDING */, fb, 0);
+				AndroidPlatformLog.Info("OpenRA.GL.PrimVp",
+					"#" + loggedPrimitiveViewport + " " + pt + " first=" + firstVertex + " n=" + numVertices +
+					" viewport=[" + vp[0] + "," + vp[1] + "," + vp[2] + "," + vp[3] + "]" +
+					" scissor=" + (scOn[0] != 0 ? "on" : "off") +
+					" scissorBox=[" + sc[0] + "," + sc[1] + "," + sc[2] + "," + sc[3] + "]" +
+					" fbo=" + fb[0]);
+			}
+
 			GLES20.GlDrawArrays(ModeFromPrimitiveType(pt), firstVertex, numVertices);
 			GlDiagnostics.Check("DrawPrimitives(" + pt + ", first=" + firstVertex + ", n=" + numVertices + ")");
 		}
