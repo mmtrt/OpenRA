@@ -45,9 +45,6 @@ namespace OpenRA.Android
 				// Place assemblies there and install a resolve hook so we never dual-load
 				// (duplicate MobileInfo types break Chronoshiftable.HasTraitInfo<MobileInfo>()).
 				EnsureSingleAssemblyLoad();
-				ContentBootstrap.PlaceAssembliesForLoader();
-				CopyModsToBinDir();
-				ContentBootstrap.StageAssembliesForObjectCreator(mod);
 
 				AndroidNativeBootstrap.Init();
 				AndroidNativeBootstrap.AttachResolversToLoadedAssemblies();
@@ -143,69 +140,6 @@ namespace OpenRA.Android
 			AndroidFileLog.Info("OpenRA.Bootstrap", "BaseDirectory=" + AppDomain.CurrentDomain.BaseDirectory);
 		}
 
-		static void CopyModsToBinDir()
-		{
-			var bin = AppDomain.CurrentDomain.BaseDirectory;
-			if (string.IsNullOrEmpty(bin) || string.IsNullOrEmpty(SupportDir))
-				return;
-
-			try
-			{
-				Directory.CreateDirectory(bin);
-			}
-			catch { /* ignore */ }
-
-			foreach (var name in new[]
-			{
-				"OpenRA.Mods.Common.dll",
-				"OpenRA.Mods.Cnc.dll",
-				"OpenRA.Mods.D2k.dll",
-				"Eluant.dll",
-				"TagLibSharp.dll",
-				"Newtonsoft.Json.dll",
-				"ICSharpCode.SharpZipLib.dll",
-				"Linguini.Bundle.dll",
-				"Linguini.Shared.dll",
-				"Linguini.Syntax.dll",
-				"BeaconLib.dll",
-				"FuzzyLogicLibrary.dll",
-				"MP3Sharp.dll",
-				"Mono.Nat.dll",
-				"NVorbis.dll",
-				"Pfim.dll",
-				"Microsoft.Extensions.DependencyModel.dll"
-			})
-			{
-				var src = Path.Combine(SupportDir, name);
-				if (!File.Exists(src))
-					continue;
-				var dest = Path.Combine(bin, name);
-				try
-				{
-					if (!File.Exists(dest) || new FileInfo(src).Length != new FileInfo(dest).Length)
-					{
-						File.Copy(src, dest, overwrite: true);
-						AndroidFileLog.Info("OpenRA.Bootstrap", "BinDir ← " + name);
-					}
-				}
-				catch (Exception e)
-				{
-					AndroidFileLog.Warn("OpenRA.Bootstrap", "BinDir copy " + name + ": " + e.Message);
-				}
-			}
-
-			// Log which Mods.Common is in the domain already
-			foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
-			{
-				try
-				{
-					var n = a.GetName().Name;
-					if (n != null && n.StartsWith("OpenRA.Mods", StringComparison.Ordinal))
-						AndroidFileLog.Info("OpenRA.Bootstrap", "Already loaded: " + n + " @ " + (a.Location ?? "(dynamic)"));
-				}
-				catch { /* ignore */ }
-			}
-		}
 
 		static void RunEngine(string mod)
 		{
@@ -259,7 +193,6 @@ namespace OpenRA.Android
 				try { Game.HideCursor = true; } catch { /* older builds */ }
 
 				PreloadBundledModAssemblies(mod);
-				ContentBootstrap.StageAssembliesForObjectCreator(mod);
 				VerifyRequiredModAssemblies(mod);
 
 				// Eluant may load here — ensure DllImportResolver is on every assembly in the default ALC.

@@ -86,73 +86,9 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ASM_OUT="$OUT/assemblies"
 mkdir -p "$ASM_OUT"
-
-COMPILE_IN_ASSEMBLIES="${COMPILE_IN_ASSEMBLIES:-1}"
-
-if [[ "$COMPILE_IN_ASSEMBLIES" == "1" ]]; then
-  echo "COMPILE_IN_ASSEMBLIES=1 — skip packaging DLLs into Assets/assemblies"
-  echo "  (launcher ProjectReference builds Common+Cnc${COPY_D2K_DLL:+; D2k when OpenRAMod=d2k})"
-  # Remove any stale staged DLLs so we never ship a 38KB stub from an old run
-  rm -f "$ASM_OUT"/OpenRA.Mods.*.dll 2>/dev/null || true
-  # Keep directory so extract paths do not throw; optional marker
-  echo "compile-in" > "$ASM_OUT/.compile_in"
-else
-  echo "COMPILE_IN_ASSEMBLIES=0 — stage mod DLLs into Assets (legacy disk load)"
-  if [[ "${SKIP_ASSEMBLY_BUILD:-}" == "1" ]]; then
-    echo "SKIP_ASSEMBLY_BUILD=1 — copy from bin-android/bin only"
-    for search in "$ROOT/bin-android" "$ROOT/bin"; do
-      [[ -d "$search" ]] || continue
-      find "$search" -maxdepth 2 -type f -name 'OpenRA.Mods.*.dll' 2>/dev/null | while read -r f; do
-        base=$(basename "$f")
-        if [[ "$base" == "OpenRA.Mods.D2k.dll" && "$COPY_D2K_DLL" != "True" ]]; then
-          continue
-        fi
-        cp -f "$f" "$ASM_OUT/"
-        echo "  assembly: $base ($(stat -c%s "$f" 2>/dev/null || stat -f%z "$f") bytes)"
-      done
-      find "$search" -maxdepth 2 -type f \( \
-        -name 'Eluant.dll' -o -name 'Newtonsoft.Json.dll' -o -name 'Linguini.*.dll' \
-        -o -name 'MP3Sharp.dll' -o -name 'NVorbis.dll' -o -name 'Pfim.dll' \
-        -o -name 'TagLibSharp.dll' -o -name 'BeaconLib.dll' -o -name 'Mono.Nat.dll' \
-        -o -name 'FuzzyLogicLibrary.dll' -o -name 'ICSharpCode.SharpZipLib.dll' \
-        -o -name 'Microsoft.Extensions.DependencyModel.dll' \
-      \) 2>/dev/null | while read -r f; do
-        cp -f "$f" "$ASM_OUT/"
-        echo "  dep: $(basename "$f")"
-      done
-    done
-  else
-    INSTALL="$SCRIPT_DIR/install-assemblies-android.sh"
-    [[ -f "$INSTALL" ]] || INSTALL="$ROOT/scripts/install-assemblies-android.sh"
-    if [[ ! -f "$INSTALL" ]]; then
-      echo "ERROR: install-assemblies-android.sh not found (required when COMPILE_IN_ASSEMBLIES=0)"
-      exit 1
-    fi
-    bash "$INSTALL" "$ROOT" "$ASM_OUT" "$CONFIG" "$COPY_CNC_DLL" "$COPY_D2K_DLL"
-  fi
-  min_size_ok() {
-    local f="$1" min="$2"
-    [[ -f "$f" ]] || return 1
-    local sz; sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
-    [[ "$sz" -ge "$min" ]]
-  }
-  if ! min_size_ok "$ASM_OUT/OpenRA.Mods.Common.dll" 100000; then
-    echo "ERROR: OpenRA.Mods.Common.dll missing or too small under Assets"
-    ls -la "$ASM_OUT" || true
-    exit 1
-  fi
-  if [[ "$COPY_CNC_DLL" == "True" ]] && ! min_size_ok "$ASM_OUT/OpenRA.Mods.Cnc.dll" 50000; then
-    echo "ERROR: OpenRA.Mods.Cnc.dll missing or too small"
-    exit 1
-  fi
-  if [[ "$COPY_D2K_DLL" == "True" ]] && ! min_size_ok "$ASM_OUT/OpenRA.Mods.D2k.dll" 50000; then
-    echo "ERROR: OpenRA.Mods.D2k.dll missing or too small"
-    exit 1
-  fi
-  if [[ "$COPY_D2K_DLL" != "True" ]]; then
-    rm -f "$ASM_OUT/OpenRA.Mods.D2k.dll"
-  fi
-fi
+rm -f "$ASM_OUT"/OpenRA.Mods.*.dll 2>/dev/null || true
+echo "compile-in" > "$ASM_OUT/.compile_in"
+echo "COMPILE_IN: no Mods DLLs in Assets (ObjectCreator uses loaded assemblies)"
 
 echo ""
 echo "=== Ruleset integrity checks (Chronoshiftable / Mobile) ==="
@@ -174,15 +110,7 @@ if [[ "$OPENRA_MOD" == "ra" ]]; then
   require_file "$OUT/mods/ra/rules/vehicles.yaml"
   require_file "$OUT/mods/ra/rules/defaults.yaml"
 fi
-if [[ "${COMPILE_IN_ASSEMBLIES:-1}" == "1" ]]; then
-  echo "  OK compile-in mode — Assets/assemblies DLLs not required"
-else
-  require_file "$OUT/assemblies/OpenRA.Mods.Common.dll"
-  require_file "$OUT/assemblies/OpenRA.Mods.Cnc.dll"
-  if [[ "$OPENRA_MOD" == "d2k" ]]; then
-    require_file "$OUT/assemblies/OpenRA.Mods.D2k.dll"
-  fi
-fi
+echo "  OK compile-in — ObjectCreator uses in-memory Mods assemblies"
 
 # Shared package dirs (OpenRA bleed: common has fonts/chrome/scripts — no mod.yaml)
 if [[ ! -d "$OUT/mods/common" ]]; then

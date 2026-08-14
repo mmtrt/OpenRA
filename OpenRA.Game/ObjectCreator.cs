@@ -38,14 +38,40 @@ namespace OpenRA
 			// Assemblies must exist in the game binary directory next to the main game executable.
 			var assemblyList = new List<Assembly>() { typeof(Game).Assembly };
 			foreach (var filename in manifest.Assemblies)
-				LoadAssembly(assemblyList, Path.Combine(Platform.BinDir, filename));
+			LoadAssembly(assemblyList, Path.Combine(Platform.BinDir, filename));
 
 			AppDomain.CurrentDomain.AssemblyResolve += ResolveAssembly;
 			assemblies = assemblyList.SelectMany(asm => asm.GetNamespaces().Select(ns => (asm, ns))).ToArray();
 		}
 
-		static void LoadAssembly(List<Assembly> assemblyList, string resolvedPath)
+			static void LoadAssembly(List<Assembly> assemblyList, string resolvedPath)
 		{
+			// Prefer already-loaded assemblies (Android ProjectReference / compile-in).
+			var simple = Path.GetFileNameWithoutExtension(resolvedPath);
+			if (!string.IsNullOrEmpty(simple))
+			{
+				foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					try
+					{
+						if (loaded.GetName().Name == simple)
+						{
+							assemblyList.Add(loaded);
+							return;
+						}
+					}
+					catch
+					{
+						// Dynamic assemblies may throw on GetName
+					}
+				}
+			}
+
+			if (string.IsNullOrEmpty(resolvedPath) || !File.Exists(resolvedPath))
+				throw new FileNotFoundException(
+					"Mod assembly not loaded in memory and not found on disk: " + resolvedPath,
+					resolvedPath);
+
 			// .NET doesn't provide any way of querying the metadata of an assembly without either:
 			//   (a) loading duplicate data into the application domain, breaking the world.
 			//   (b) crashing if the assembly has already been loaded.
@@ -65,128 +91,4 @@ namespace OpenRA
 
 			assemblyList.Add(assembly);
 		}
-
-		Assembly ResolveAssembly(object sender, ResolveEventArgs e)
-		{
-			foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
-				if (a.FullName == e.Name)
-					return a;
-
-			return assemblies?.Select(a => a.Assembly).FirstOrDefault(a => a.FullName == e.Name);
-		}
-
-		// Only used by the linter to prevent exceptions from being thrown during a lint run
-		public static Action<string> MissingTypeAction = null;
-
-		public T CreateObject<T>(string className)
-		{
-			return CreateObject<T>(className, []);
-		}
-
-		public T CreateObject<T>(string className, Dictionary<string, object> args)
-		{
-			var type = typeCache[className];
-			if (type == null)
-			{
-				// HACK: The linter does not want to crash but only print an error instead
-				if (MissingTypeAction != null)
-					MissingTypeAction(className);
-				else
-					throw new InvalidOperationException($"Cannot locate type: {className}");
-
-				return default;
-			}
-
-			var ctor = ctorCache[type];
-			if (ctor == null)
-				return (T)CreateBasic(type);
-			else
-				return (T)CreateUsingArgs(ctor, args);
-		}
-
-		public Type FindType(string className)
-		{
-			return assemblies
-				.Select(pair => pair.Assembly.GetType(pair.Namespace + "." + className, false))
-				.FirstOrDefault(t => t != null);
-		}
-
-		public ConstructorInfo GetCtor(Type type)
-		{
-			const BindingFlags Flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
-			var ctors = type.GetConstructors(Flags).Where(x => x.HasAttribute<UseCtorAttribute>()).ToList();
-			if (ctors.Count > 1)
-				throw new InvalidOperationException("ObjectCreator: UseCtor on multiple constructors; invalid.");
-			return ctors.FirstOrDefault();
-		}
-
-		public object CreateBasic(Type type)
-		{
-			return type.GetConstructor([]).Invoke([]);
-		}
-
-		public object CreateUsingArgs(ConstructorInfo ctor, Dictionary<string, object> args)
-		{
-			var p = ctor.GetParameters();
-			var a = new object[p.Length];
-			for (var i = 0; i < p.Length; i++)
-			{
-				var key = p[i].Name;
-				if (!args.TryGetValue(key, out var arg)) throw new InvalidOperationException($"ObjectCreator: key `{key}' not found");
-				a[i] = arg;
-			}
-
-			return ctor.Invoke(a);
-		}
-
-		public IEnumerable<Type> GetTypesImplementing<T>()
-		{
-			var it = typeof(T);
-			return GetTypes().Where(t => t != it && it.IsAssignableFrom(t));
-		}
-
-		public IEnumerable<Type> GetTypes()
-		{
-			return assemblies.Select(ma => ma.Assembly).Distinct()
-				.SelectMany(ma => ma.GetTypes());
-		}
-
-		public TLoader GetLoader<TLoader>(string format, string name)
-		{
-			var loader = FindType(format + "Loader");
-			if (loader == null || !loader.GetInterfaces().Contains(typeof(TLoader)))
-				throw new InvalidOperationException($"Unable to find a {name} loader for type '{format}'.");
-
-			return (TLoader)CreateBasic(loader);
-		}
-
-		public TLoader[] GetLoaders<TLoader>(IEnumerable<string> formats, string name)
-		{
-			var loaders = new List<TLoader>();
-			foreach (var format in formats)
-				loaders.Add(GetLoader<TLoader>(format, name));
-
-			return loaders.ToArray();
-		}
-
-		~ObjectCreator()
-		{
-			Dispose(false);
-		}
-
-		public void Dispose()
-		{
-			Dispose(true);
-			GC.SuppressFinalize(this);
-		}
-
-		void Dispose(bool disposing)
-		{
-			if (disposing)
-				AppDomain.CurrentDomain.AssemblyResolve -= ResolveAssembly;
-		}
-
-		[AttributeUsage(AttributeTargets.Constructor)]
-		public sealed class UseCtorAttribute : Attribute { }
-	}
 }
