@@ -7,6 +7,7 @@ using System.IO;
 using System.Text;
 using Android.App;
 using ALog = global::Android.Util.Log;
+using OpenRA.Platforms.Android;
 
 namespace OpenRA.Android
 {
@@ -131,7 +132,7 @@ namespace OpenRA.Android
 			// Official engine channel when ready
 			try
 			{
-				AndroidPlatformLog.Error("OpenRA.Crash", header + "\n" + text);
+				global::OpenRA.Platforms.Android.AndroidPlatformLog.Error("OpenRA.Crash", header + "\n" + text);
 			}
 			catch { /* ignore */ }
 		}
