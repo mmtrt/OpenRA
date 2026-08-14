@@ -64,6 +64,13 @@ namespace OpenRA.Android
 			var marker = Path.Combine(SupportDir, ".assets_extracted");
 			// Assemblies: compile-in APK does not need Assets/assemblies extract.
 			var needExtract = !File.Exists(marker) || !HasAnyMod() || EngineAssetsLookStale();
+			// Manual content copy often creates Content/ without mods/ — force engine extract.
+			if (!HasAnyMod())
+			{
+				try { if (File.Exists(marker)) File.Delete(marker); } catch { /* ignore */ }
+				needExtract = true;
+				AndroidFileLog.Warn("OpenRA.Content", "mods/ missing — force engine asset extract (first run after content copy)");
+			}
 			if (!HasStagedModAssembly())
 			{
 				// Still try extract once for legacy APKs that ship DLLs in Assets

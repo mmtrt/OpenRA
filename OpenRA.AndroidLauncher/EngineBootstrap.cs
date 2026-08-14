@@ -498,7 +498,7 @@ namespace OpenRA.Android
 					"Player:" + nl +
 					tab + "Name: Android Commander" + nl +
 					"Graphics:" + nl +
-					tab + "Mode: Fullscreen" + nl +
+					tab + "Mode: PseudoFullscreen" + nl +
 					tab + "WindowedSize: " + w + "," + h + nl +
 					tab + "FullscreenSize: " + w + "," + h + nl +
 					tab + "DisableHardwareCursors: true" + nl +
@@ -514,7 +514,7 @@ namespace OpenRA.Android
 					tab + "TargetLines: Automatic" + nl;
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
-					"Seeded settings.yaml Fullscreen + CursorDouble + TargetLines Automatic + Touch + UIScale 1.75 " + w + "x" + h);
+					"Seeded settings.yaml PseudoFullscreen + CursorDouble + TargetLines Automatic + Touch + UIScale 1.75 " + w + "x" + h);
 				WritePinnedUIScale(supportDir, 1.75f);
 			}
 			catch (Exception e)
@@ -582,15 +582,22 @@ namespace OpenRA.Android
 					changed = true;
 					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted ViewportDistance → Close");
 				}
-				// Video mode: Fullscreen (only if Mode key never set)
-				if (text.IndexOf("Mode:", StringComparison.OrdinalIgnoreCase) < 0)
+				// Video mode: PseudoFullscreen (not exclusive / "legacy" Fullscreen)
+				if (text.IndexOf("Mode: Fullscreen", StringComparison.OrdinalIgnoreCase) >= 0
+				    && text.IndexOf("PseudoFullscreen", StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					text = text.Replace("Mode: Fullscreen", "Mode: PseudoFullscreen");
+					changed = true;
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Upgraded Graphics.Mode Fullscreen → PseudoFullscreen");
+				}
+				else if (text.IndexOf("Mode:", StringComparison.OrdinalIgnoreCase) < 0)
 				{
 					if (text.Contains("Graphics:"))
-						text = text.Replace("Graphics:", "Graphics:" + Environment.NewLine + "	Mode: Fullscreen");
+						text = text.Replace("Graphics:", "Graphics:" + Environment.NewLine + "	Mode: PseudoFullscreen");
 					else
-						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	Mode: Fullscreen" + Environment.NewLine;
+						text += Environment.NewLine + "Graphics:" + Environment.NewLine + "	Mode: PseudoFullscreen" + Environment.NewLine;
 					changed = true;
-					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted Graphics.Mode → Fullscreen");
+					AndroidFileLog.Info("OpenRA.Bootstrap", "Defaulted Graphics.Mode → PseudoFullscreen");
 				}
 				// Double-size software cursor (Increase Cursor Size)
 				if (text.IndexOf("CursorDouble", StringComparison.OrdinalIgnoreCase) < 0)
