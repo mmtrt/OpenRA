@@ -289,8 +289,7 @@ namespace OpenRA.Android
 					"TryStartEngine deferred — ready=" + ContentBootstrap.IsReady
 					+ " mods=" + ContentBootstrap.HasAnyMod()
 					+ " asm=" + ContentBootstrap.HasStagedModAssembly());
-				statusOverlay.Text = "Preparing engine assets…
-mods=" + ContentBootstrap.HasAnyMod()
+				statusOverlay.Text = "Preparing engine assets...\nmods=" + ContentBootstrap.HasAnyMod()
 					+ " asm=" + ContentBootstrap.HasStagedModAssembly();
 				// Retry shortly — first launch extract can finish after first surface frame
 				try
