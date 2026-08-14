@@ -2,6 +2,7 @@
 
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using Android.App;
 using Android.Content.Res;
@@ -293,6 +294,153 @@ namespace OpenRA.Android
 			}
 			catch { /* ignore */ }
 			return false;
+		}
+
+		
+		/// <summary>
+		/// ObjectCreator.LoadAssembly always File.OpenRead(BinDir/OpenRA.Mods.*.dll).
+		/// Compile-in loads the assembly in-memory but leaves no file there — stage bytes
+		/// from the APK (or Assembly.Location) into BaseDirectory before InitializeMod.
+		/// </summary>
+		public static void StageAssembliesForObjectCreator(string mod)
+		{
+			string bin;
+			try { bin = AppDomain.CurrentDomain.BaseDirectory; }
+			catch { bin = null; }
+			if (string.IsNullOrEmpty(bin))
+			{
+				try { bin = Application.Context.FilesDir?.AbsolutePath; }
+				catch { bin = null; }
+			}
+			if (string.IsNullOrEmpty(bin))
+				return;
+
+			try { Directory.CreateDirectory(bin); }
+			catch { /* ignore */ }
+
+			var names = new System.Collections.Generic.List<string>
+			{
+				"OpenRA.Mods.Common.dll",
+				"OpenRA.Mods.Cnc.dll"
+			};
+			if (string.Equals(mod, "d2k", StringComparison.OrdinalIgnoreCase))
+				names.Add("OpenRA.Mods.D2k.dll");
+
+			foreach (var fileName in names)
+			{
+				var dest = Path.Combine(bin, fileName);
+				try
+				{
+					if (File.Exists(dest) && new FileInfo(dest).Length >= 50000)
+					{
+						AndroidFileLog.Info("OpenRA.Content", "ObjectCreator stage skip (exists) " + dest);
+						continue;
+					}
+				}
+				catch { /* ignore */ }
+
+				var simple = Path.GetFileNameWithoutExtension(fileName);
+				var staged = false;
+
+				// 1) Loaded assembly with a real Location
+				try
+				{
+					foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+					{
+						try
+						{
+							if (a.GetName().Name != simple)
+								continue;
+							var loc = a.Location;
+							if (!string.IsNullOrEmpty(loc) && File.Exists(loc))
+							{
+								File.Copy(loc, dest, overwrite: true);
+								AndroidFileLog.Info("OpenRA.Content", "ObjectCreator stage from Location " + loc + " → " + dest);
+								staged = true;
+								break;
+							}
+						}
+						catch { /* ignore */ }
+					}
+				}
+				catch { /* ignore */ }
+
+				if (staged)
+					continue;
+
+				// 2) SupportDir / AssembliesDir copies
+				foreach (var dir in new[] { AssembliesDir, SupportDir })
+				{
+					if (string.IsNullOrEmpty(dir)) continue;
+					var src = Path.Combine(dir, fileName);
+					try
+					{
+						if (File.Exists(src) && new FileInfo(src).Length > 0)
+						{
+							File.Copy(src, dest, overwrite: true);
+							AndroidFileLog.Info("OpenRA.Content", "ObjectCreator stage from " + src);
+							staged = true;
+							break;
+						}
+					}
+					catch { /* ignore */ }
+				}
+				if (staged)
+					continue;
+
+				// 3) Extract from base APK zip (dotnet android packs assemblies/*/*.dll)
+				if (TryExtractDllFromApk(fileName, dest))
+				{
+					AndroidFileLog.Info("OpenRA.Content", "ObjectCreator stage from APK → " + dest);
+					continue;
+				}
+
+				AndroidFileLog.Warn("OpenRA.Content", "ObjectCreator stage FAILED for " + fileName + " (BinDir=" + bin + ")");
+			}
+		}
+
+		static bool TryExtractDllFromApk(string fileName, string destPath)
+		{
+			try
+			{
+				var ctx = Application.Context;
+				var apk = ctx.ApplicationInfo?.SourceDir;
+				if (string.IsNullOrEmpty(apk) || !File.Exists(apk))
+					return false;
+
+				using var zip = System.IO.Compression.ZipFile.OpenRead(apk);
+				System.IO.Compression.ZipArchiveEntry match = null;
+				foreach (var e in zip.Entries)
+				{
+					if (e == null || string.IsNullOrEmpty(e.FullName))
+						continue;
+					// assemblies/OpenRA.Mods.Common.dll or assemblies/arm64-v8a/OpenRA.Mods.Common.dll
+					if (e.Name.Equals(fileName, StringComparison.OrdinalIgnoreCase)
+					    || e.FullName.EndsWith("/" + fileName, StringComparison.OrdinalIgnoreCase))
+					{
+						match = e;
+						// Prefer non-compressed store / larger entries
+						if (e.Length >= 50000)
+							break;
+					}
+				}
+				if (match == null)
+					return false;
+
+				var dir = Path.GetDirectoryName(destPath);
+				if (!string.IsNullOrEmpty(dir))
+					Directory.CreateDirectory(dir);
+				using (var src = match.Open())
+				using (var dst = File.Create(destPath))
+					src.CopyTo(dst);
+				return File.Exists(destPath) && new FileInfo(destPath).Length > 0;
+			}
+			catch (Exception e)
+			{
+				try { AndroidFileLog.Warn("OpenRA.Content", "APK extract " + fileName + ": " + e.Message); }
+				catch { /* ignore */ }
+				return false;
+			}
 		}
 
 		public static bool HasAnyMod()

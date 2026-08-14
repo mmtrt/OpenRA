@@ -47,6 +47,7 @@ namespace OpenRA.Android
 				EnsureSingleAssemblyLoad();
 				ContentBootstrap.PlaceAssembliesForLoader();
 				CopyModsToBinDir();
+				ContentBootstrap.StageAssembliesForObjectCreator(mod);
 
 				AndroidNativeBootstrap.Init();
 				AndroidNativeBootstrap.AttachResolversToLoadedAssemblies();
@@ -258,6 +259,7 @@ namespace OpenRA.Android
 				try { Game.HideCursor = true; } catch { /* older builds */ }
 
 				PreloadBundledModAssemblies(mod);
+				ContentBootstrap.StageAssembliesForObjectCreator(mod);
 				VerifyRequiredModAssemblies(mod);
 
 				// Eluant may load here — ensure DllImportResolver is on every assembly in the default ALC.
