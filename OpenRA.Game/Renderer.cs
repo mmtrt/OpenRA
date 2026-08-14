@@ -370,18 +370,25 @@ namespace OpenRA
 			renderType = RenderType.None;
 		}
 
-		int loggedDrawBatches;
+		readonly Dictionary<string, int> loggedDrawBatchesByType = new();
 
 		public void DrawBatch<T>(IVertexBuffer<T> vertices, IShader shader,
 			int firstVertex, int numVertices, PrimitiveType type)
 			where T : struct
 		{
-			if (loggedDrawBatches < 12)
+			// Track per vertex-type, not a single global cap — a single cap meant that on
+			// TS, ModelRenderer's frequent ModelVertex draws (voxel units) exhausted the
+			// whole budget before a single RenderPostProcessPassVertex (the post-process
+			// tint quad we're actually chasing) ever got logged.
+			var typeName = typeof(T).Name;
+			if (!loggedDrawBatchesByType.TryGetValue(typeName, out var count))
+				count = 0;
+
+			if (count < 12)
 			{
-				loggedDrawBatches++;
-				Log.Write("graphics", "DrawBatch #" + loggedDrawBatches +
+				loggedDrawBatchesByType[typeName] = count + 1;
+				Log.Write("graphics", "DrawBatch [" + typeName + "] #" + (count + 1) +
 					" shader=" + shader.GetType().Name +
-					" vertexType=" + typeof(T).Name +
 					" first=" + firstVertex + " n=" + numVertices + " type=" + type);
 			}
 
