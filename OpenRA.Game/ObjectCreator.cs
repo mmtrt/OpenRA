@@ -38,13 +38,18 @@ namespace OpenRA
 			// Assemblies must exist in the game binary directory next to the main game executable.
 			var assemblyList = new List<Assembly>() { typeof(Game).Assembly };
 			foreach (var filename in manifest.Assemblies)
-			LoadAssembly(assemblyList, Path.Combine(Platform.BinDir, filename));
+				LoadAssembly(assemblyList, Path.Combine(Platform.BinDir, filename));
 
 			AppDomain.CurrentDomain.AssemblyResolve += ResolveAssembly;
 			assemblies = assemblyList.SelectMany(asm => asm.GetNamespaces().Select(ns => (asm, ns))).ToArray();
 		}
 
-			static void LoadAssembly(List<Assembly> assemblyList, string resolvedPath)
+		public void Dispose()
+		{
+			AppDomain.CurrentDomain.AssemblyResolve -= ResolveAssembly;
+		}
+
+		static void LoadAssembly(List<Assembly> assemblyList, string resolvedPath)
 		{
 			// Prefer already-loaded assemblies (Android ProjectReference / compile-in).
 			var simple = Path.GetFileNameWithoutExtension(resolvedPath);
@@ -72,11 +77,11 @@ namespace OpenRA
 					"Mod assembly not loaded in memory and not found on disk: " + resolvedPath,
 					resolvedPath);
 
-			// .NET doesn't provide any way of querying the metadata of an assembly without either:
-			//   (a) loading duplicate data into the application domain, breaking the world.
-			//   (b) crashing if the assembly has already been loaded.
-			// We can't check the internal name of the assembly, so we'll work off the data instead
-			string hash;
+				// .NET doesn't provide any way of querying the metadata of an assembly without either:
+				//   (a) loading duplicate data into the application domain, breaking the world.
+				//   (b) crashing if the assembly has already been loaded.
+				// We can't check the internal name of the assembly, so we'll work off the data instead
+				string hash;
 			using (var stream = File.OpenRead(resolvedPath))
 			hash = CryptoUtil.SHA1Hash(stream);
 
