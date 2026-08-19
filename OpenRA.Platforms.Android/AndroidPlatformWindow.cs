@@ -135,10 +135,12 @@ namespace OpenRA.Platforms.Android
 
 				foreach (var z in input.DrainZoom())
 				{
-					// Map ratio markers to discrete mouse-wheel ticks (Viewport AdjustZoom).
-					// Positive Delta.Y = zoom in when ZoomModifier is None (default).
+					// Viewport.AdjustZoom(dz) with dz = Delta.Y * ZoomSpeed (default 0.04).
+					// Keyboard zoom uses ~±0.25; wheel ±120 → dz≈±4.8 maxes zoom in ONE step
+					// (looks like "zoom worked once then never again"). Use small deltas:
+					// Delta.Y=±6 → dz≈±0.24 per three-finger step.
 					var loc = input.LastPointerLogical;
-					var wheel = z >= 1f ? 120 : -120;
+					var wheel = z >= 1f ? 6 : -6;
 					inputHandler.OnMouseInput(new MouseInput(
 						MouseInputEvent.Scroll, MouseButton.None,
 						loc, new int2(0, wheel), Modifiers.None, 0));

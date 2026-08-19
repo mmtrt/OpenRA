@@ -73,7 +73,7 @@ namespace OpenRA.Platforms.Android
 		const int TwoFingerTapSlop = 36;
 		const int TwoFingerTapMaxMs = 400;
 		/// <summary>Vertical travel (px) of 3-finger centroid per zoom step (logical px).</summary>
-		const int ThreeFingerZoomStep = 18;
+		const int ThreeFingerZoomStep = 14;
 		/// <summary>Queue markers only — PlatformWindow maps these to ±120 wheel ticks.</summary>
 		const float ThreeFingerZoomRatioIn = 1.25f;
 		const float ThreeFingerZoomRatioOut = 0.8f;
