@@ -223,10 +223,10 @@ namespace OpenRA.Android
 		const string UIScalePinFile = "android-uiscale";
 
 		/// <summary>
-		/// UIScale above 1.0 was vanishing from settings.yaml on relaunch: Settings.Save()
-		/// omits fields that equal their defaults, and something was resetting Graphics.UIScale
-		/// to 1.0 before Save. Pin the value next to settings.yaml and always re-apply via
-		/// Engine args (Arguments override yaml) + merge back into settings.yaml on boot.
+		/// UIScale can vanish from settings.yaml on relaunch: Settings.Save() omits fields
+		/// that equal engine defaults. Pin the value next to settings.yaml and re-apply via
+		/// Engine args + merge back into settings.yaml on boot.
+		/// Default Android seed: UIScale 1.0, WindowedSize/FullscreenSize 1066x480.
 		/// </summary>
 		static float ReadPinnedUIScale(string supportDir)
 		{
@@ -275,7 +275,7 @@ namespace OpenRA.Android
 			var chosen = Math.Max(fromYaml, fromPin);
 			// First-run default when neither yaml nor pin has a value yet
 			if (chosen <= 1.0001f && fromYaml <= 1.0001f && fromPin <= 1.0001f)
-				return 1.80f;
+				return 1.0f;
 			return chosen;
 		}
 
@@ -460,8 +460,11 @@ namespace OpenRA.Android
 			try
 			{
 				var path = Path.Combine(supportDir, "settings.yaml");
-				var w = Math.Max(1, AndroidEgl.SurfaceWidth);
-				var h = Math.Max(1, AndroidEgl.SurfaceHeight);
+				// Default render/window size (not native panel pixels). UIScale 1.0 with 1066×480.
+				const int DefaultWidth = 1066;
+				const int DefaultHeight = 480;
+				var w = DefaultWidth;
+				var h = DefaultHeight;
 
 				// CRITICAL: never overwrite an existing settings.yaml — that wiped every
 				// in-game Settings change on the next launch (player name, UIScale, etc.).
@@ -470,11 +473,9 @@ namespace OpenRA.Android
 				{
 					EnsureAndroidRequiredSettings(path, w, h);
 					var scale = ReadPinnedUIScale(supportDir);
-					if (scale > 1.0001f)
-					{
-						WritePinnedUIScale(supportDir, scale);
-						MergeUIScaleIntoSettingsYaml(supportDir, scale);
-					}
+					// Keep pinned scale in yaml (including 1.0 — Settings.Save may strip defaults).
+					WritePinnedUIScale(supportDir, scale);
+					MergeUIScaleIntoSettingsYaml(supportDir, scale);
 					try
 					{
 						var existing = File.ReadAllText(path);
@@ -504,18 +505,19 @@ namespace OpenRA.Android
 					tab + "DisableHardwareCursors: true" + nl +
 					tab + "CursorDouble: true" + nl +
 					tab + "GLProfile: Embedded" + nl +
-					tab + "UIScale: 1.80" + nl +
+					tab + "UIScale: 1.0" + nl +
 					tab + "ViewportDistance: Close" + nl +
 					tab + "VSync: true" + nl +
 					"Sound:" + nl +
 					tab + "Device: " + nl +  // empty = default OpenAL device
 					"Game:" + nl +
 					tab + "MouseControlStyle: Touch" + nl +  // Android-only default control scheme
+					tab + "ZoomModifier: None" + nl +
 					tab + "TargetLines: Automatic" + nl;
 				File.WriteAllText(path, yaml);
 				AndroidFileLog.Info("OpenRA.Bootstrap",
-					"Seeded settings.yaml PseudoFullscreen + CursorDouble + TargetLines Automatic + Touch + UIScale 1.80 " + w + "x" + h);
-				WritePinnedUIScale(supportDir, 1.80f);
+					"Seeded settings.yaml PseudoFullscreen + CursorDouble + TargetLines Automatic + Touch + UIScale 1.0 " + w + "x" + h);
+				WritePinnedUIScale(supportDir, 1.0f);
 			}
 			catch (Exception e)
 			{
