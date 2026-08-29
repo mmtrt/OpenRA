@@ -578,6 +578,32 @@ namespace OpenRA
 			}
 		}
 
+		/// <summary>
+		/// Unconditionally disables scissoring at the GL level for the current render
+		/// target, bypassing the EnableScissor/DisableScissor push/pop stack entirely.
+		/// For defensive use only, by code that draws a full-screen quad and must not be
+		/// affected by whatever scissor state — correct or otherwise — a caller earlier in
+		/// the same frame left behind. Unlike DisableScissor(), this never throws and never
+		/// touches scissorState, so it's safe to call unconditionally regardless of whether
+		/// anything is actually on the stack.
+		///
+		/// Added after diagnostics confirmed a full-screen post-process effect
+		/// (RenderPostProcessPassBase — used for day/night/flash/menu-fade effects) drawing
+		/// with GL_SCISSOR_TEST unexpectedly enabled and a stale, undersized rect, causing
+		/// the effect to only partially cover the screen. The stack can desync because
+		/// AndroidFrameBuffer.Unbind() directly disables GL_SCISSOR_TEST at the raw GL
+		/// level (bypassing scissorState) every time the world buffer unbinds, which the
+		/// stack's own bookkeeping has no visibility into — so a later EnableScissor call
+		/// can push on top of state the stack doesn't realize was already reset elsewhere.
+		/// </summary>
+		public void ForceDisableScissor()
+		{
+			if (renderType == RenderType.World)
+				worldBuffer.DisableScissor();
+			else
+				Context.DisableScissor();
+		}
+
 		public void EnableDepthBuffer()
 		{
 			Flush();
