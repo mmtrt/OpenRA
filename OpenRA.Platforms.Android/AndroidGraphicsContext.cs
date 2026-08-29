@@ -867,22 +867,6 @@ namespace OpenRA.Platforms.Android
 			EnsureTexture();
 			size = new Size(rect.Width, rect.Height);
 			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
-
-			// CRITICAL: glFlush before the copy. This is a GPU-side read of the CURRENTLY
-			// BOUND FRAMEBUFFER's contents, called right after a batch of draw calls (most
-			// notably Renderer.GetRenderBufferSnapshot(), used by TintPostProcessEffect for
-			// day/night effects — it snapshots the just-rendered world buffer before
-			// tinting on top of it). On immediate-mode desktop GPUs, a read-after-write
-			// within the same context/thread is naturally serialized, so this was never an
-			// issue there. Mobile GPUs (both Mali and Adreno are tile-based deferred
-			// renderers) resolve tiles asynchronously — without an explicit flush here,
-			// glCopyTexImage2D can read some tiles before they've finished resolving,
-			// producing a partial "resolved vs stale" result. TBDR tile-processing order
-			// commonly follows a spatial-locality pattern, which is consistent with the
-			// diagonal split artifact observed (a full-screen tint that only covered part
-			// of the screen, with a clean diagonal boundary) rather than random noise.
-			GLES20.GlFlush();
-
 			// CopyTexImage2D internal format must be sized RGBA8 on ES3 — not GL_BGRA.
 			GLES20.GlCopyTexImage2D(GLES20.GlTexture2d, 0, GL_RGBA8, rect.Left, rect.Top, rect.Width, rect.Height, 0);
 			GlDiagnostics.Check("Texture.SetDataFromReadBuffer RGBA8");
