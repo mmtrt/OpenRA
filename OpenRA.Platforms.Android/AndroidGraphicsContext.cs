@@ -272,10 +272,20 @@ namespace OpenRA.Platforms.Android
 
 		public void EnableDepthBuffer()
 		{
+			// Matches desktop's Sdl2GraphicsContext.EnableDepthBuffer exactly — that
+			// implementation never touches glDepthMask at all. This previously had an
+			// extra GLES20.GlDepthMask(true) call with no desktop equivalent; since
+			// DisableDepthBuffer only disables GL_DEPTH_TEST (also matching desktop) and
+			// never resets the mask, that extra call left glDepthMask permanently true for
+			// the rest of the app's lifetime after the first voxel-model draw (the only
+			// caller of this pair, in ModelRenderer.cs) — including for every subsequent
+			// draw call with GL_DEPTH_TEST disabled, where depth values still get written
+			// whenever the mask is true (a disabled depth test is defined as always
+			// passing, so writes still happen if the mask allows it). Removed to match the
+			// proven-correct desktop reference exactly rather than diverging from it.
 			GLES20.GlClear(GLES20.GlDepthBufferBit);
 			GLES20.GlEnable(GLES20.GlDepthTest);
 			GLES20.GlDepthFunc(GLES20.GlLequal);
-			GLES20.GlDepthMask(true);
 		}
 
 		public void DisableDepthBuffer() => GLES20.GlDisable(GLES20.GlDepthTest);
