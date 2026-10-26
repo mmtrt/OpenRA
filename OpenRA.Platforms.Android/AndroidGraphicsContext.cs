@@ -824,6 +824,97 @@ namespace OpenRA.Platforms.Android
 			ApplyPaletteFilterIfNeeded(width);
 		}
 
+		/// <summary>
+		/// Uploads only the dirty rectangle of a sheet's pixel buffer (ITexture.SetSubData,
+		/// added upstream so Sheet.GetTexture doesn't re-upload an entire multi-megabyte sheet
+		/// when a few sprites were packed in at runtime).
+		///
+		/// Desktop pins the whole managed array and lets GL read the sub-rectangle through
+		/// GL_UNPACK_ROW_LENGTH/SKIP_PIXELS/SKIP_ROWS (zero-copy). Here the GLES binding needs
+		/// a Java direct ByteBuffer, so that approach would push the ENTIRE sheet through JNI
+		/// on every sub-update and defeat the purpose. Instead only the dirty rows are copied
+		/// into the reusable upload buffer (tightly packed, so no global pixel-store state is
+		/// touched or needs resetting). The uploaded texels are identical to desktop's.
+		///
+		/// The pixel format MUST match what SetData used for this texture, or the patched
+		/// region would have red/blue swapped relative to the rest of the sheet: BGRA bytes
+		/// as-is when GL_BGRA8_EXT works (Mali), R/B-swapped RGBA when it doesn't (Adreno).
+		/// </summary>
+		public void SetSubData(byte[] colors, int xoffset, int yoffset, int width, int height)
+		{
+			if (width <= 0 || height <= 0)
+				return;
+
+			var texWidth = size.Width;
+			var texHeight = size.Height;
+
+			// Anything that makes a partial update unsafe or meaningless (no texture storage
+			// yet, format path not yet probed by a first SetData, region outside the texture,
+			// or a source buffer smaller than the texture) falls back to a full upload, which
+			// is always correct — glTexSubImage2D with an out-of-range region would instead
+			// raise GL_INVALID_VALUE and leave the texture stale.
+			if (texture == 0 || bgra8ExtSupported == null ||
+				xoffset < 0 || yoffset < 0 ||
+				xoffset + width > texWidth || yoffset + height > texHeight ||
+				colors.Length < (long)texWidth * texHeight * 4)
+			{
+				SetData(colors, texWidth, texHeight);
+				return;
+			}
+
+			GLES20.GlBindTexture(GLES20.GlTexture2d, texture);
+
+			var stride = texWidth * 4;
+			var rowBytes = width * 4;
+			var regionBytes = rowBytes * height;
+			var bb = GetUploadBuffer(regionBytes);
+
+			int format;
+			if (bgra8ExtSupported == true)
+			{
+				format = GL_BGRA_EXT;
+
+				// Full-width regions are contiguous in the sheet buffer: one bulk copy.
+				if (width == texWidth)
+					bb.Put(colors, yoffset * stride, regionBytes);
+				else
+					for (var row = 0; row < height; row++)
+						bb.Put(colors, (yoffset + row) * stride + xoffset * 4, rowBytes);
+			}
+			else
+			{
+				format = GLES20.GlRgba;
+
+				var swapped = ArrayPool<byte>.Shared.Rent(regionBytes);
+				try
+				{
+					var dst = 0;
+					for (var row = 0; row < height; row++)
+					{
+						var src = (yoffset + row) * stride + xoffset * 4;
+						for (var x = 0; x < width; x++, src += 4, dst += 4)
+						{
+							swapped[dst] = colors[src + 2];     // R <- B
+							swapped[dst + 1] = colors[src + 1]; // G
+							swapped[dst + 2] = colors[src];     // B <- R
+							swapped[dst + 3] = colors[src + 3]; // A
+						}
+					}
+
+					bb.Put(swapped, 0, regionBytes);
+				}
+				finally
+				{
+					ArrayPool<byte>.Shared.Return(swapped, clearArray: false);
+				}
+			}
+
+			bb.Position(0);
+			GLES20.GlTexSubImage2D(GLES20.GlTexture2d, 0, xoffset, yoffset, width, height,
+								   format, GLES20.GlUnsignedByte, bb);
+			GlDiagnostics.Check("Texture.SetSubData " + width + "x" + height + " @" + xoffset + "," + yoffset);
+		}
+
 		void ApplyPaletteFilterIfNeeded(int width)
 		{
 			// Palette sheets are 256×N; linear filtering interpolates indices → noisy unit sprites.

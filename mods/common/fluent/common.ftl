@@ -28,6 +28,7 @@ notification-unknown-map = Map was not found on server.
 notification-searching-map = Searching for map on the Resource Center...
 notification-admin-change-configuration = Only the host can change the configuration.
 notification-changed-map = { $player } changed the map to { $map }.
+notification-hidden-map-has-been-previewed = This generated map has been previewed by the admin during creation.
 notification-you-were-kicked = You have been kicked from the server.
 notification-admin-kicked = { $admin } kicked { $player } from the server.
 notification-kicked = { $player } was kicked from the server.
@@ -339,8 +340,10 @@ button-retry-search = Retry Search
 label-created-by = Created by { $author }
 
 ## SpawnSelectorTooltipLogic
-label-disabled-spawn = Disabled spawn
-label-available-spawn = Available spawn
+label-disabled-spawn = Disabled spawn { $spawn }
+label-available-spawn = Available spawn { $spawn }
+label-spawn-name = Spawn { $spawn }
+label-team-spawn = Team { $team }  Spawn { $spawn }
 
 ## DisplaySettingsLogic
 options-camera =
@@ -678,7 +681,7 @@ label-spectators-count =
        *[other] { $spectators } Spectators
     }
 
-## ServerlistLogic, GameInfoStatsLogic, ObserverShroudSelectorLogic, SpawnSelectorTooltipLogic, ReplayBrowserLogic
+## ServerlistLogic, GameInfoStatsLogic, ObserverShroudSelectorLogic, ReplayBrowserLogic
 label-team-name = Team { $team }
 label-no-team = No Team
 

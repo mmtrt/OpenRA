@@ -307,7 +307,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					graphicSettings.UIScale = defaultGraphicSettings.UIScale;
 					Game.Renderer.SetUIScale(defaultGraphicSettings.UIScale);
 					RecalculateWidgetLayout(Ui.Root);
-					Viewport.LastMousePos = (Viewport.LastMousePos.ToFloat2() * oldScale / graphicSettings.UIScale).ToInt2();
+					Viewport.LastMousePos = int2.FromVector(Viewport.LastMousePos.ToVector2() * oldScale / graphicSettings.UIScale);
 				}
 
 				gameSettings.TextNotificationPoolFilters = defaultGameSettings.TextNotificationPoolFilters;
@@ -555,7 +555,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 							Game.Renderer.SetUIScale(o);
 							RecalculateWidgetLayout(Ui.Root);
-							Viewport.LastMousePos = (Viewport.LastMousePos.ToFloat2() * oldScale / graphicSettings.UIScale).ToInt2();
+							Viewport.LastMousePos = int2.FromVector(Viewport.LastMousePos.ToVector2() * oldScale / graphicSettings.UIScale);
 
 							// Persist immediately — UIScale does not require restart, but leaving the
 							// menu without Save (or force-killing the app) previously dropped values
@@ -578,7 +578,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 
 			var viewportSizes = Game.ModData.GetOrCreate<WorldViewportSizes>();
-			var maxScales = new float2(Game.Renderer.NativeResolution) / new float2(viewportSizes.MinEffectiveResolution);
+			var maxScales = Game.Renderer.NativeResolution.ToVector2() / viewportSizes.MinEffectiveResolution.ToVector2();
 			var maxScale = Math.Min(maxScales.X, maxScales.Y);
 
 			// Phones are wide but short; height-based maxScale alone caps near 1.5 (e.g. 1080/720).

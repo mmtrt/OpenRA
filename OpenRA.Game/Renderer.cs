@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Threading;
 using OpenRA.FileFormats;
 using OpenRA.Graphics;
@@ -79,7 +80,7 @@ namespace OpenRA
 		Size lastBufferSize = new(-1, -1);
 
 		Rectangle lastWorldViewport;
-		float2 lastViewportLocation;
+		Vector2 lastViewportLocation;
 		ITexture currentPaletteTexture;
 		int currentPaletteHeight = 0;
 		IBatchRenderer currentBatchRenderer;
@@ -99,16 +100,17 @@ namespace OpenRA
 
 			Context = Window.Context;
 
+			tempVertexBuffer = Context.CreateEmptyVertexBuffer<Vertex>(TempVertexBufferSize);
+			quadIndexBuffer = Context.CreateIndexBuffer(Util.CreateQuadIndices(TempIndexBufferSize / 6));
+
 			var combinedBindings = new CombinedShaderBindings();
-			WorldSpriteRenderer = new SpriteRenderer(this, Context.CreateShader(combinedBindings));
+			WorldSpriteRenderer = new SpriteRenderer(this, tempVertexBuffer, quadIndexBuffer, Context.CreateShader(combinedBindings));
 			WorldRgbaSpriteRenderer = new RgbaSpriteRenderer(WorldSpriteRenderer);
 			WorldRgbaColorRenderer = new RgbaColorRenderer(WorldSpriteRenderer);
-			SpriteRenderer = new SpriteRenderer(this, Context.CreateShader(combinedBindings));
+			SpriteRenderer = new SpriteRenderer(this, tempVertexBuffer, quadIndexBuffer, Context.CreateShader(combinedBindings));
 			RgbaSpriteRenderer = new RgbaSpriteRenderer(SpriteRenderer);
 			RgbaColorRenderer = new RgbaColorRenderer(SpriteRenderer);
 
-			tempVertexBuffer = Context.CreateEmptyVertexBuffer<Vertex>(TempVertexBufferSize);
-			quadIndexBuffer = Context.CreateIndexBuffer(Util.CreateQuadIndices(TempIndexBufferSize / 6));
 			bufferSnapshot = Context.CreateTexture();
 		}
 
@@ -233,7 +235,7 @@ namespace OpenRA
 			lastMaximumViewportSize = size;
 		}
 
-		public void BeginWorld(float2 viewportLocation, Size viewportSize)
+		public void BeginWorld(Vector2 viewportLocation, Size viewportSize)
 		{
 			if (renderType != RenderType.None)
 				throw new InvalidOperationException($"BeginWorld called with renderType = {renderType}, expected RenderType.None.");
@@ -243,7 +245,7 @@ namespace OpenRA
 			if (worldSheet == null)
 				throw new InvalidOperationException("BeginWorld called before SetMaximumViewportSize has been set.");
 
-			var centerLocation = viewportLocation.ToInt2();
+			var centerLocation = int2.FromVector(viewportLocation);
 			if (worldSprite == null || viewportSize != lastWorldViewportSize || viewportLocation != lastViewportLocation)
 			{
 				lastViewportLocation = viewportLocation;
@@ -260,15 +262,15 @@ namespace OpenRA
 
 				// We need to add 1 to scroll in order to handle interpixel 0-0.99 fractionalOffset.
 				var s = new Size(vw / WorldDownscaleFactor + 1, vh / WorldDownscaleFactor + 1);
-				var fractionalOffset = centerLocation - viewportLocation;
+				var fractionalOffset = centerLocation.ToVector2() - viewportLocation;
 
 				// If scaling by an integer factor (including 1:1) we must round the offset
 				// to an integer number of screen-space pixels to preserve sharp pixel edges
 				var renderScale = screenSprite.Size.X / (s.Width - 1f);
 				if (float.IsInteger(renderScale))
-					fractionalOffset = (fractionalOffset * renderScale).Round() / renderScale;
+					fractionalOffset = Vector2.Round(fractionalOffset * renderScale) / renderScale;
 
-				worldSprite = new Sprite(worldSheet, new Rectangle(int2.Zero, s), 0, fractionalOffset, TextureChannel.RGBA);
+				worldSprite = new Sprite(worldSheet, new Rectangle(int2.Zero, s), 0, fractionalOffset.AsVector3(), TextureChannel.RGBA);
 			}
 
 			worldBuffer.Bind();
@@ -297,7 +299,7 @@ namespace OpenRA
 				var scale = Window.EffectiveWindowScale;
 
 				// We added 1 to worldSprite now we need to subtract.
-				var bufferScale = new float3(
+				var bufferScale = new Vector3(
 					(int)(screenSprite.Bounds.Width / scale) / (worldSprite.Size.X - 1),
 					(int)(-screenSprite.Bounds.Height / scale) / (worldSprite.Size.Y - 1),
 					1f);
@@ -315,7 +317,7 @@ namespace OpenRA
 				}
 
 				SpriteRenderer.EnablePixelArtScaling(true);
-				RgbaSpriteRenderer.DrawSprite(worldSprite, float3.Zero, bufferScale);
+				RgbaSpriteRenderer.DrawSprite(worldSprite, Vector3.Zero, bufferScale);
 				Flush();
 				SpriteRenderer.EnablePixelArtScaling(false);
 			}
@@ -360,8 +362,8 @@ namespace OpenRA
 			// Render the compositor buffers to the screen
 			// HACK / PERF: Fudge the coordinates to cover the actual window while keeping the buffer viewport parameters
 			// This saves us two redundant (and expensive) SetViewportParams each frame
-			RgbaSpriteRenderer.DrawSprite(screenSprite, new float3(0, lastBufferSize.Height, 0),
-				new float3(lastBufferSize.Width / screenSprite.Size.X, -lastBufferSize.Height / screenSprite.Size.Y, 1f));
+			RgbaSpriteRenderer.DrawSprite(screenSprite, new Vector3(0, lastBufferSize.Height, 0),
+				new Vector3(lastBufferSize.Width / screenSprite.Size.X, -lastBufferSize.Height / screenSprite.Size.Y, 1f));
 			Flush();
 
 			Window.PumpInput(inputHandler);
@@ -396,77 +398,6 @@ namespace OpenRA
 			shader.Bind();
 			Context.DrawPrimitives(type, firstVertex, numVertices);
 			PerfHistory.Increment("batches", 1);
-		}
-
-		int loggedDegenerateQuads;
-
-		public void DrawQuadBatch(ref Vertex[] vertices, IShader shader, int numVertices)
-		{
-			// One-time-ish diagnostic: scan for any quad (4 consecutive vertices) that's
-			// geometrically degenerate — the signature of a "streak" artifact (a rectangle
-			// collapsed to a thin sliver at some rotation). See the size-gate/ratio-check
-			// comment below for exactly what's being compared and why. Cheap early-exit
-			// once we've logged a handful of occurrences. Uses OpenRA's own Log (mirrored
-			// into AndroidFileLog on Android) rather than any platform-specific call, since
-			// this is shared code.
-			if (loggedDegenerateQuads < 8)
-			{
-				for (var i = 0; i + 3 < numVertices; i += 4)
-				{
-					var v0 = vertices[i];
-					var v1 = vertices[i + 1];
-					var v2 = vertices[i + 2];
-					var v3 = vertices[i + 3];
-
-					float minX = Math.Min(Math.Min(v0.X, v1.X), Math.Min(v2.X, v3.X));
-					float maxX = Math.Max(Math.Max(v0.X, v1.X), Math.Max(v2.X, v3.X));
-					float minY = Math.Min(Math.Min(v0.Y, v1.Y), Math.Min(v2.Y, v3.Y));
-					float maxY = Math.Max(Math.Max(v0.Y, v1.Y), Math.Max(v2.Y, v3.Y));
-
-					var w = maxX - minX;
-					var h = maxY - minY;
-					var bboxArea = w * h;
-
-					// Shoelace formula, assuming the 4 vertices are wound in quad order
-					// (matches how sprite quads are always built: consistent winding).
-					var shoelace =
-						(v0.X * v1.Y - v1.X * v0.Y) +
-						(v1.X * v2.Y - v2.X * v1.Y) +
-						(v2.X * v3.Y - v3.X * v2.Y) +
-						(v3.X * v0.Y - v0.X * v3.Y);
-					var quadArea = Math.Abs(shoelace) * 0.5f;
-
-					// A degenerate/sliver quad: spans a substantial bounding-box DIAGONAL
-					// (so it's not a small, legitimately-thin normal UI element like a
-					// health-bar underline) AND its actual area is small relative to its
-					// bounding-box area. The diagonal is the size GATE (catches long-thin
-					// streaks at any rotation, unlike a bboxArea floor which unfairly
-					// excludes thin-but-long shapes precisely because they're thin). The
-					// quadArea-vs-bboxArea RATIO is the degeneracy check: for any legitimate
-					// axis-aligned rectangle, shoelace area == w*h exactly regardless of how
-					// thin it is (e.g. 480x2 has quadArea=960=bboxArea, ratio=1.0, never
-					// flagged) — that ratio only drops for a rotated/sheared/genuinely
-					// degenerate shape.
-					var diag = MathF.Sqrt(w * w + h * h);
-					if (diag > 300 && quadArea < bboxArea * 0.1f)
-					{
-						loggedDegenerateQuads++;
-						Log.Write("graphics", "Degenerate quad #" + loggedDegenerateQuads +
-							" shader=" + shader.GetType().Name +
-							" verts=[" +
-							$"({v0.X:F1},{v0.Y:F1},{v0.Z:F1}) | ({v1.X:F1},{v1.Y:F1},{v1.Z:F1}) | " +
-							$"({v2.X:F1},{v2.Y:F1},{v2.Z:F1}) | ({v3.X:F1},{v3.Y:F1},{v3.Z:F1})" +
-							"] bbox=" + w.ToString("F1") + "x" + h.ToString("F1") +
-							" bboxArea=" + bboxArea.ToString("F0") + " quadArea=" + quadArea.ToString("F0"));
-
-						if (loggedDegenerateQuads >= 8)
-							break;
-					}
-				}
-			}
-
-			tempVertexBuffer.SetData(ref vertices, numVertices);
-			DrawQuadBatch(tempVertexBuffer, quadIndexBuffer, shader, numVertices / 4 * 6, 0);
 		}
 
 		public void DrawQuadBatch<T>(IVertexBuffer<T> vertices, IIndexBuffer indices, IShader shader, int numIndices, int start)
